@@ -58,18 +58,25 @@ jobs:
           npm install -g bun
           bun install
 
-      - name: Generate icons
-        shell: bash
+      - name: Create icon generation script
         run: |
           mkdir -p src-tauri/icons
-          node << 'NODESCRIPT'
+
+      - name: Generate icons
+        run: |
+          node -e "
           const fs = require('fs');
           const path = require('path');
           const zlib = require('zlib');
 
           const iconsDir = path.join(process.cwd(), 'src-tauri', 'icons');
-          if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
+          console.log('Creating icons in:', iconsDir);
 
+          if (!fs.existsSync(iconsDir)) {
+            fs.mkdirSync(iconsDir, { recursive: true });
+          }
+
+          // BMP data for ICO (BGRA format)
           function createBmpData(w, h, r, g, b) {
             const data = Buffer.alloc(w * h * 4);
             for (let y = 0; y < h; y++) {
@@ -140,31 +147,40 @@ jobs:
               const l = Buffer.alloc(4);
               l.writeUInt32BE(d.length, 0);
               const tb = Buffer.from(t);
-              const cr = Buffer.alloc(4);
               let c = 0xFFFFFFFF;
               const tbl = [];
               for (let i = 0; i < 256; i++) { let x = i; for (let j = 0; j < 8; j++) x = (x & 1) ? (0xEDB88320 ^ (x >>> 1)) : (x >>> 1); tbl[i] = x; }
               const cd = Buffer.concat([tb, d]);
               for (let i = 0; i < cd.length; i++) c = tbl[(c ^ cd[i]) & 0xFF] ^ (c >>> 8);
+              const cr = Buffer.alloc(4);
               cr.writeUInt32BE((c ^ 0xFFFFFFFF) >>> 0, 0);
               return Buffer.concat([l, tb, d, cr]);
             };
             return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
           }
 
-          fs.writeFileSync(path.join(iconsDir, 'icon.ico'), createIco());
-          console.log('Created icon.ico');
+          // Create ICO
+          const ico = createIco();
+          fs.writeFileSync(path.join(iconsDir, 'icon.ico'), ico);
+          console.log('Created icon.ico, size:', ico.length);
+
+          // Create PNGs
           const c = {r:102,g:126,b:234,a:255};
-          [[1024,'icon.png'],[32,'32x32.png'],[128,'128x128.png'],[256,'128x128@2x.png']].forEach(([s,n]) => {
+          for (const [s, n] of [[1024,'icon.png'],[32,'32x32.png'],[128,'128x128.png'],[256,'128x128@2x.png']]) {
             fs.writeFileSync(path.join(iconsDir, n), createPNG(s, s, c.r, c.g, c.b, c.a));
-          });
+          }
           fs.writeFileSync(path.join(iconsDir, 'icon.icns'), createPNG(256, 256, c.r, c.g, c.b, c.a));
-          console.log('All icons created!');
-          NODESCRIPT
+
+          console.log('All icons created:', fs.readdirSync(iconsDir));
+          "
 
       - name: Verify icons
-        shell: bash
-        run: ls -la src-tauri/icons/
+        run: |
+          echo "=== Icons directory ==="
+          ls -la src-tauri/icons/ || dir src-tauri\\icons
+          echo ""
+          echo "=== Verifying ICO ==="
+          cat src-tauri/icons/icon.ico | head -c 6 | xxd || type src-tauri\\icons\\icon.ico
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
