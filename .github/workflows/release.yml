@@ -15,11 +15,17 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest'
-            args: ''
+            args: '--target aarch64-apple-darwin'
+            target: 'aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+            target: 'x86_64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
+            target: ''
           - platform: 'windows-latest'
             args: ''
+            target: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -39,6 +45,8 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -50,58 +58,107 @@ jobs:
           npm install -g bun
           bun install
 
-      - name: Install sharp for icon generation
-        run: bun add -d sharp
-
-      - name: Generate icons
+      - name: Generate icons (no dependencies)
         shell: bash
         run: |
           mkdir -p src-tauri/icons
-          cat > /tmp/generate-icons.js << 'SCRIPT_EOF'
-          const sharp = require('sharp');
+          node << 'NODESCRIPT'
           const fs = require('fs');
           const path = require('path');
+          const zlib = require('zlib');
 
           const iconsDir = path.join(process.cwd(), 'src-tauri', 'icons');
-          console.log('Icons directory:', iconsDir);
-
           if (!fs.existsSync(iconsDir)) {
             fs.mkdirSync(iconsDir, { recursive: true });
           }
 
-          const svg = '<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#667eea;stop-opacity:1" /><stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" /></linearGradient></defs><rect width="100%" height="100%" fill="url(#grad)" rx="128"/><text x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="500" font-family="Arial" font-weight="bold">M</text></svg>';
-
-          (async () => {
-            const sizes = [[1024, 'icon.png'], [32, '32x32.png'], [128, '128x128.png'], [256, '128x128@2x.png']];
-            for (const [size, name] of sizes) {
-              await sharp(Buffer.from(svg)).resize(size, size).png().toFile(path.join(iconsDir, name));
-              console.log('Created ' + name);
+          function createPNG(width, height, r, g, b) {
+            const signature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+            const ihdrData = Buffer.alloc(13);
+            ihdrData.writeUInt32BE(width, 0);
+            ihdrData.writeUInt32BE(height, 4);
+            ihdrData.writeUInt8(8, 8);
+            ihdrData.writeUInt8(2, 9);
+            ihdrData.writeUInt8(0, 10);
+            ihdrData.writeUInt8(0, 11);
+            ihdrData.writeUInt8(0, 12);
+            const ihdr = createChunk('IHDR', ihdrData);
+            const rawData = Buffer.alloc(height * (1 + width * 3));
+            for (let y = 0; y < height; y++) {
+              const rowStart = y * (1 + width * 3);
+              rawData[rowStart] = 0;
+              for (let x = 0; x < width; x++) {
+                const pixelStart = rowStart + 1 + x * 3;
+                rawData[pixelStart] = r;
+                rawData[pixelStart + 1] = g;
+                rawData[pixelStart + 2] = b;
+              }
             }
+            const compressed = zlib.deflateSync(rawData);
+            const idat = createChunk('IDAT', compressed);
+            const iend = createChunk('IEND', Buffer.alloc(0));
+            return Buffer.concat([signature, ihdr, idat, iend]);
+          }
 
-            const ico256 = await sharp(Buffer.from(svg)).resize(256, 256).png().toBuffer();
-            const pngData = ico256;
-            const icoHeader = Buffer.alloc(6);
-            icoHeader.writeUInt16LE(0, 0);
-            icoHeader.writeUInt16LE(1, 2);
-            icoHeader.writeUInt16LE(1, 4);
-            const icoDir = Buffer.alloc(16);
-            icoDir.writeUInt8(0, 0);
-            icoDir.writeUInt8(0, 1);
-            icoDir.writeUInt8(0, 2);
-            icoDir.writeUInt8(0, 3);
-            icoDir.writeUInt16LE(1, 4);
-            icoDir.writeUInt16LE(32, 6);
-            icoDir.writeUInt32LE(pngData.length, 8);
-            icoDir.writeUInt32LE(22, 12);
-            const ico = Buffer.concat([icoHeader, icoDir, pngData]);
-            fs.writeFileSync(path.join(iconsDir, 'icon.ico'), ico);
-            console.log('Created icon.ico');
-            fs.writeFileSync(path.join(iconsDir, 'icon.icns'), ico256);
-            console.log('Created icon.icns');
-            console.log('Files:', fs.readdirSync(iconsDir));
-          })();
-          SCRIPT_EOF
-          node /tmp/generate-icons.js
+          function createChunk(type, data) {
+            const length = Buffer.alloc(4);
+            length.writeUInt32BE(data.length, 0);
+            const typeBuffer = Buffer.from(type);
+            const crcData = Buffer.concat([typeBuffer, data]);
+            const crc = crc32(crcData);
+            const crcBuffer = Buffer.alloc(4);
+            crcBuffer.writeUInt32BE(crc >>> 0, 0);
+            return Buffer.concat([length, typeBuffer, data, crcBuffer]);
+          }
+
+          function crc32(data) {
+            let crc = 0xFFFFFFFF;
+            const table = [];
+            for (let i = 0; i < 256; i++) {
+              let c = i;
+              for (let j = 0; j < 8; j++) {
+                c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+              }
+              table[i] = c;
+            }
+            for (let i = 0; i < data.length; i++) {
+              crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+            }
+            return crc ^ 0xFFFFFFFF;
+          }
+
+          function createICO(pngBuffer) {
+            const header = Buffer.alloc(6);
+            header.writeUInt16LE(0, 0);
+            header.writeUInt16LE(1, 2);
+            header.writeUInt16LE(1, 4);
+            const entry = Buffer.alloc(16);
+            entry.writeUInt8(0, 0);
+            entry.writeUInt8(0, 1);
+            entry.writeUInt8(0, 2);
+            entry.writeUInt8(0, 3);
+            entry.writeUInt16LE(1, 4);
+            entry.writeUInt16LE(24, 6);
+            entry.writeUInt32LE(pngBuffer.length, 8);
+            entry.writeUInt32LE(22, 12);
+            return Buffer.concat([header, entry, pngBuffer]);
+          }
+
+          const color = { r: 102, g: 126, b: 234 };
+          const sizes = [[1024, 'icon.png'], [32, '32x32.png'], [128, '128x128.png'], [256, '128x128@2x.png']];
+          for (const [size, name] of sizes) {
+            const png = createPNG(size, size, color.r, color.g, color.b);
+            fs.writeFileSync(path.join(iconsDir, name), png);
+            console.log('Created ' + name);
+          }
+          const png256 = createPNG(256, 256, color.r, color.g, color.b);
+          const ico = createICO(png256);
+          fs.writeFileSync(path.join(iconsDir, 'icon.ico'), ico);
+          console.log('Created icon.ico');
+          fs.writeFileSync(path.join(iconsDir, 'icon.icns'), png256);
+          console.log('Created icon.icns');
+          console.log('All icons created!');
+          NODESCRIPT
 
       - name: Verify icons exist
         shell: bash
@@ -116,9 +173,16 @@ jobs:
           releaseName: 'PerfectMD ${{ github.ref_name }}'
           releaseBody: |
             ## 下载安装
-            - Windows: 下载 .msi 文件双击安装
-            - macOS: 下载 .dmg 文件双击安装
-            - Linux: 下载 .deb 或 .AppImage 文件
+
+            ### macOS
+            - **M1/M2/M3 芯片**: 下载 `_aarch64.dmg` 文件
+            - **Intel 芯片**: 下载 `_x64.dmg` 文件
+
+            ### Windows
+            - 下载 `.msi` 文件双击安装
+
+            ### Linux
+            - 下载 `.deb` 或 `.AppImage` 文件
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
