@@ -147,84 +147,25 @@ jobs:
 
       - name: Generate icons (Windows only)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p src-tauri/icons
-          npm install -g png-to-ico
-
-          node << 'NODESCRIPT'
-          const fs = require('fs');
-          const path = require('path');
-          const zlib = require('zlib');
-
-          const iconsDir = path.join(process.cwd(), 'src-tauri', 'icons');
-          if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
-
-          function createPNG(width, height, r, g, b, a) {
-            const signature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-            const ihdrData = Buffer.alloc(13);
-            ihdrData.writeUInt32BE(width, 0);
-            ihdrData.writeUInt32BE(height, 4);
-            ihdrData.writeUInt8(8, 8);
-            ihdrData.writeUInt8(6, 9);
-            ihdrData.writeUInt8(0, 10);
-            ihdrData.writeUInt8(0, 11);
-            ihdrData.writeUInt8(0, 12);
-            const ihdr = createChunk('IHDR', ihdrData);
-            const rawData = Buffer.alloc(height * (1 + width * 4));
-            for (let y = 0; y < height; y++) {
-              const rowStart = y * (1 + width * 4);
-              rawData[rowStart] = 0;
-              for (let x = 0; x < width; x++) {
-                const pixelStart = rowStart + 1 + x * 4;
-                rawData[pixelStart] = r;
-                rawData[pixelStart + 1] = g;
-                rawData[pixelStart + 2] = b;
-                rawData[pixelStart + 3] = a;
-              }
-            }
-            const compressed = zlib.deflateSync(rawData);
-            const idat = createChunk('IDAT', compressed);
-            const iend = createChunk('IEND', Buffer.alloc(0));
-            return Buffer.concat([signature, ihdr, idat, iend]);
-          }
-
-          function createChunk(type, data) {
-            const length = Buffer.alloc(4);
-            length.writeUInt32BE(data.length, 0);
-            const typeBuffer = Buffer.from(type);
-            const crcData = Buffer.concat([typeBuffer, data]);
-            const crc = crc32(crcData);
-            const crcBuffer = Buffer.alloc(4);
-            crcBuffer.writeUInt32BE(crc >>> 0, 0);
-            return Buffer.concat([length, typeBuffer, data, crcBuffer]);
-          }
-
-          function crc32(data) {
-            let crc = 0xFFFFFFFF;
-            const table = [];
-            for (let i = 0; i < 256; i++) {
-              let c = i;
-              for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-              table[i] = c;
-            }
-            for (let i = 0; i < data.length; i++) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
-            return crc ^ 0xFFFFFFFF;
-          }
-
-          const color = { r: 102, g: 126, b: 234, a: 255 };
-          const sizes = [[32, '32x32.png'], [64, '64x64.png'], [128, '128x128.png'], [256, '256x256.png'], [512, '512x512.png'], [1024, 'icon.png']];
-          for (const [size, name] of sizes) {
-            const png = createPNG(size, size, color.r, color.g, color.b, color.a);
-            fs.writeFileSync(path.join(iconsDir, name), png);
-            console.log('Created ' + name);
-          }
-          NODESCRIPT
-
-          png-to-ico src-tauri/icons/32x32.png src-tauri/icons/64x64.png src-tauri/icons/128x128.png src-tauri/icons/256x256.png src-tauri/icons/512x512.png > src-tauri/icons/icon.ico
-          cp src-tauri/icons/256x256.png src-tauri/icons/icon.icns
-          cp src-tauri/icons/256x256.png src-tauri/icons/128x128@2x.png
-          ls -la src-tauri/icons/
+          New-Item -ItemType Directory -Force -Path "src-tauri\icons"
+          
+          # Download a valid ICO file from Tauri examples
+          $icoUrl = "https://raw.githubusercontent.com/tauri-apps/tauri/dev/examples/api/src-tauri/icons/icon.ico"
+          Invoke-WebRequest -Uri $icoUrl -OutFile "src-tauri\icons\icon.ico" -UseBasicParsing
+          Write-Host "Downloaded icon.ico"
+          
+          # Create PNG files
+          $pngUrl = "https://raw.githubusercontent.com/tauri-apps/tauri/dev/examples/api/src-tauri/icons/icon.png"
+          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\icon.png" -UseBasicParsing
+          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\32x32.png" -UseBasicParsing
+          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\128x128.png" -UseBasicParsing
+          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\128x128@2x.png" -UseBasicParsing
+          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\icon.icns" -UseBasicParsing
+          Write-Host "Downloaded PNG files"
+          
+          Get-ChildItem "src-tauri\icons"
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
