@@ -58,7 +58,7 @@ jobs:
           npm install -g bun
           bun install
 
-      - name: Generate PNG icons (Unix)
+      - name: Generate icons (Unix)
         if: runner.os != 'Windows'
         shell: bash
         run: |
@@ -145,16 +145,13 @@ jobs:
           console.log('Icons created');
           NODESCRIPT
 
-      - name: Generate icons (Windows)
+      - name: Generate icons (Windows only)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           mkdir -p src-tauri/icons
-
-          # Install png-to-ico for proper ICO generation
           npm install -g png-to-ico
 
-          # Create PNG icons
           node << 'NODESCRIPT'
           const fs = require('fs');
           const path = require('path');
@@ -216,7 +213,7 @@ jobs:
           }
 
           const color = { r: 102, g: 126, b: 234, a: 255 };
-          const sizes = [[32, '32x32.png'], [128, '128x128.png'], [256, '256x256.png'], [512, '512x512.png'], [1024, 'icon.png']];
+          const sizes = [[32, '32x32.png'], [64, '64x64.png'], [128, '128x128.png'], [256, '256x256.png'], [512, '512x512.png'], [1024, 'icon.png']];
           for (const [size, name] of sizes) {
             const png = createPNG(size, size, color.r, color.g, color.b, color.a);
             fs.writeFileSync(path.join(iconsDir, name), png);
@@ -224,10 +221,7 @@ jobs:
           }
           NODESCRIPT
 
-          # Generate proper ICO using png-to-ico
-          png-to-ico src-tauri/icons/32x32.png src-tauri/icons/128x128.png src-tauri/icons/256x256.png src-tauri/icons/512x512.png > src-tauri/icons/icon.ico
-          echo "Created icon.ico"
-
+          png-to-ico src-tauri/icons/32x32.png src-tauri/icons/64x64.png src-tauri/icons/128x128.png src-tauri/icons/256x256.png src-tauri/icons/512x512.png > src-tauri/icons/icon.ico
           cp src-tauri/icons/256x256.png src-tauri/icons/icon.icns
           cp src-tauri/icons/256x256.png src-tauri/icons/128x128@2x.png
           ls -la src-tauri/icons/
@@ -241,16 +235,10 @@ jobs:
           releaseName: 'PerfectMD ${{ github.ref_name }}'
           releaseBody: |
             ## 下载安装
-
-            ### macOS
-            - **M1/M2/M3 芯片**: 下载 `_aarch64.dmg` 文件
-            - **Intel 芯片**: 下载 `_x64.dmg` 文件
-
-            ### Windows
-            - 下载 `.msi` 文件双击安装
-
-            ### Linux
-            - 下载 `.deb` 或 `.AppImage` 文件
+            - macOS M1/M2/M3: 下载 `_aarch64.dmg`
+            - macOS Intel: 下载 `_x64.dmg`
+            - Windows: 下载 `.msi`
+            - Linux: 下载 `.deb` 或 `.AppImage`
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
