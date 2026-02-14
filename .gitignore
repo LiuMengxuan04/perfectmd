@@ -51,6 +51,10 @@ server.log
 # Tauri
 src-tauri/target/
 
+# Electron build output
+dist/
+electron.js
+
 # Prisma database (if any remains)
 *.db
 *.db-journal

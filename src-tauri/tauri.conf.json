@@ -1,18 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Markdown Editor",
+  "productName": "PerfectMD",
   "version": "1.0.0",
-  "identifier": "com.markdown-editor.app",
+  "identifier": "com.perfectmd.app",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../.next"
   },
   "app": {
     "windows": [
       {
-        "title": "Markdown Editor",
+        "title": "PerfectMD - Markdown Editor",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "dmg", "deb", "appimage"],
+    "targets": ["msi", "dmg", "deb", "appimage", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,12 +37,13 @@
       "icons/icon.ico"
     ],
     "category": "Productivity",
-    "shortDescription": "Markdown Editor",
+    "shortDescription": "PerfectMD - Markdown Editor",
     "longDescription": "A modern Markdown editor combining Typora's simplicity with Word's rich formatting capabilities",
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": ""
-    }
+    },
+    "publisher": "PerfectMD"
   }
 }

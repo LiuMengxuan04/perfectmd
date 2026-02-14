@@ -1,4 +1,4 @@
-# Markdown Editor
+# PerfectMD
 
 A modern Markdown editor combining Typora's simplicity with Word's rich formatting capabilities.
 
@@ -20,136 +20,61 @@ A modern Markdown editor combining Typora's simplicity with Word's rich formatti
 - **Search**: Quick document search
 - **Export**: Export to Markdown format
 - **Backup/Restore**: Full data backup and restore functionality
-- **Local Storage**: All data stored locally in your browser
+- **Local Storage**: All data stored locally in your browser (IndexedDB)
 
-## 🚀 Quick Start
+## 📥 Download & Install
 
-### Prerequisites
+### Download Desktop App
 
-- Node.js 18+ or Bun
-- npm, yarn, pnpm, or bun
+Go to [Releases](https://github.com/ssbsunshengbo/perfectmd/releases) page and download the installer for your platform:
 
-### Installation
+| Platform | Download |
+|----------|----------|
+| Windows | `.msi` or `.exe` installer |
+| macOS | `.dmg` installer |
+| Linux | `.deb` or `.AppImage` |
 
-1. Clone the repository:
+### Run from Source
+
 ```bash
-git clone https://github.com/your-username/markdown-editor.git
-cd markdown-editor
-```
+# Clone the repository
+git clone https://github.com/ssbsunshengbo/perfectmd.git
+cd perfectmd
 
-2. Install dependencies:
-```bash
-# Using bun (recommended)
-bun install
-
-# Or using npm
+# Install dependencies
 npm install
-```
 
-3. Start the development server:
-```bash
-# Using bun
-bun run dev
-
-# Or using npm
+# Start development server
 npm run dev
+
+# Open http://localhost:3000 in your browser
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+## 🚀 Deploy Your Own
 
-## 📦 Deployment
+### Deploy to Vercel (Online Version)
 
-### Deploy to Vercel (Recommended)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/ssbsunshengbo/perfectmd)
 
-The easiest way to deploy this app is to use [Vercel](https://vercel.com):
+### Build Desktop App Locally
 
-1. Push your code to GitHub
-2. Import your repository in Vercel
-3. Vercel will automatically detect Next.js and configure the build
-4. Click "Deploy"
+**Prerequisites:**
+- Node.js 18+
+- Rust (install from https://rustup.rs)
 
-Your app will be live at `https://your-project.vercel.app`
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/markdown-editor)
-
-### Deploy to Netlify
-
-1. Push your code to GitHub
-2. Connect your repository in [Netlify](https://netlify.com)
-3. Build command: `npm run build`
-4. Publish directory: `.next`
-5. Deploy
-
-## 🖥️ Desktop App (Tauri)
-
-This project supports building desktop applications using Tauri.
-
-### Prerequisites for Desktop Build
-
-- [Rust](https://www.rust-lang.org/tools/install)
-- Platform-specific dependencies:
-  - **Windows**: Microsoft Visual Studio C++ Build Tools
-  - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
-  - **Linux**: `sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev`
-
-### Build Desktop App
-
-1. Install Tauri CLI:
 ```bash
-# Already included in package.json dependencies
+# Install dependencies
+npm install
+
+# Build desktop app
+npm run tauri:build
 ```
 
-2. Development:
-```bash
-bun run tauri:dev
-```
-
-3. Build for production:
-```bash
-bun run tauri:build
-```
-
-The built applications will be in `src-tauri/target/release/bundle/`:
-- **Windows**: `.msi` installer
-- **macOS**: `.dmg` installer
-- **Linux**: `.deb` and `.AppImage`
-
-## 📁 Project Structure
-
-```
-markdown-editor/
-├── src/
-│   ├── app/                    # Next.js app router
-│   │   ├── page.tsx            # Main page
-│   │   ├── layout.tsx          # Root layout
-│   │   └── globals.css         # Global styles
-│   ├── components/
-│   │   ├── editor/             # Editor components
-│   │   │   ├── MarkdownEditor.tsx
-│   │   │   ├── FloatingToolbar.tsx
-│   │   │   ├── Sidebar.tsx
-│   │   │   ├── Header.tsx
-│   │   │   └── EmptyState.tsx
-│   │   └── ui/                 # shadcn/ui components
-│   ├── lib/
-│   │   ├── local-storage.ts    # IndexedDB storage layer
-│   │   └── html-to-markdown.ts # Export utility
-│   └── store/
-│       └── editor-store.ts     # Zustand state management
-├── src-tauri/                  # Tauri desktop app config
-│   ├── src/
-│   │   └── main.rs             # Rust entry point
-│   ├── Cargo.toml              # Rust dependencies
-│   └── tauri.conf.json         # Tauri configuration
-├── public/                     # Static assets
-├── package.json
-├── next.config.ts
-└── README.md
-```
+The installers will be in `src-tauri/target/release/bundle/`.
 
 ## 🔧 Technology Stack
 
-- **Framework**: [Next.js 16](https://nextjs.org/) with App Router
+- **Framework**: [Next.js 16](https://nextjs.org/)
 - **Language**: [TypeScript 5](https://www.typescriptlang.org/)
 - **Styling**: [Tailwind CSS 4](https://tailwindcss.com/)
 - **UI Components**: [shadcn/ui](https://ui.shadcn.com/)
@@ -160,18 +85,11 @@ markdown-editor/
 
 ## 💾 Data Storage
 
-This application uses **IndexedDB** for local storage. All your documents are stored in your browser:
-
-- **No server required**: Everything runs locally
-- **Privacy first**: Your data never leaves your device
-- **Offline support**: Works without internet connection
-- **Backup feature**: Export all data as JSON for backup
-
-### Backup & Restore
-
-1. Click the database icon in the sidebar
-2. Select "Backup All Data" to download a JSON file
-3. To restore, select "Restore from Backup" and choose your backup file
+This application uses **IndexedDB** for local storage:
+- All data stored in your browser/device
+- No server required
+- Works offline
+- Export/backup feature available
 
 ## ⌨️ Keyboard Shortcuts
 
@@ -187,22 +105,10 @@ This application uses **IndexedDB** for local storage. All your documents are st
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [Typora](https://typora.io/) for inspiration on simplicity
-- [Notion](https://notion.so) for the block editor concept
-- [shadcn/ui](https://ui.shadcn.com/) for beautiful components
+This project is licensed under the MIT License.
 
 ---
 
-Made with ❤️ by [Your Name]
+Made with ❤️
