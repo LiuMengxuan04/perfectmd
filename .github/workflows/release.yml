@@ -58,8 +58,7 @@ jobs:
           npm install -g bun
           bun install
 
-      - name: Generate icons (Unix)
-        if: runner.os != 'Windows'
+      - name: Generate icons
         shell: bash
         run: |
           mkdir -p src-tauri/icons
@@ -71,101 +70,101 @@ jobs:
           const iconsDir = path.join(process.cwd(), 'src-tauri', 'icons');
           if (!fs.existsSync(iconsDir)) fs.mkdirSync(iconsDir, { recursive: true });
 
-          function createPNG(width, height, r, g, b, a) {
-            const signature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-            const ihdrData = Buffer.alloc(13);
-            ihdrData.writeUInt32BE(width, 0);
-            ihdrData.writeUInt32BE(height, 4);
-            ihdrData.writeUInt8(8, 8);
-            ihdrData.writeUInt8(6, 9);
-            ihdrData.writeUInt8(0, 10);
-            ihdrData.writeUInt8(0, 11);
-            ihdrData.writeUInt8(0, 12);
-            const ihdr = createChunk('IHDR', ihdrData);
-            const rawData = Buffer.alloc(height * (1 + width * 4));
-            for (let y = 0; y < height; y++) {
-              const rowStart = y * (1 + width * 4);
-              rawData[rowStart] = 0;
-              for (let x = 0; x < width; x++) {
-                const pixelStart = rowStart + 1 + x * 4;
-                rawData[pixelStart] = r;
-                rawData[pixelStart + 1] = g;
-                rawData[pixelStart + 2] = b;
-                rawData[pixelStart + 3] = a;
+          function createBmpData(w, h, r, g, b) {
+            const data = Buffer.alloc(w * h * 4);
+            for (let y = 0; y < h; y++) {
+              for (let x = 0; x < w; x++) {
+                const i = (y * w + x) * 4;
+                data[i] = b; data[i+1] = g; data[i+2] = r; data[i+3] = 0;
               }
             }
-            const compressed = zlib.deflateSync(rawData);
-            const idat = createChunk('IDAT', compressed);
-            const iend = createChunk('IEND', Buffer.alloc(0));
-            return Buffer.concat([signature, ihdr, idat, iend]);
+            return data;
           }
 
-          function createChunk(type, data) {
-            const length = Buffer.alloc(4);
-            length.writeUInt32BE(data.length, 0);
-            const typeBuffer = Buffer.from(type);
-            const crcData = Buffer.concat([typeBuffer, data]);
-            const crc = crc32(crcData);
-            const crcBuffer = Buffer.alloc(4);
-            crcBuffer.writeUInt32BE(crc >>> 0, 0);
-            return Buffer.concat([length, typeBuffer, data, crcBuffer]);
+          function createAndMask(w, h) {
+            return Buffer.alloc(Math.ceil(w / 8) * h);
           }
 
-          function crc32(data) {
-            let crc = 0xFFFFFFFF;
-            const table = [];
-            for (let i = 0; i < 256; i++) {
-              let c = i;
-              for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-              table[i] = c;
+          function createIco() {
+            const sizes = [{w:16,h:16},{w:32,h:32},{w:48,h:48},{w:256,h:256}];
+            const r=102, g=126, b=234;
+            let offset = 6 + 16 * sizes.length;
+            const images = [];
+            for (const s of sizes) {
+              const bmp = createBmpData(s.w, s.h, r, g, b);
+              const mask = createAndMask(s.w, s.h);
+              const hdr = Buffer.alloc(40);
+              hdr.writeUInt32LE(40, 0);
+              hdr.writeInt32LE(s.w, 4);
+              hdr.writeInt32LE(s.h * 2, 8);
+              hdr.writeUInt16LE(1, 12);
+              hdr.writeUInt16LE(32, 14);
+              hdr.writeUInt32LE(bmp.length + mask.length, 20);
+              const img = Buffer.concat([hdr, bmp, mask]);
+              images.push({w: s.w, h: s.h, data: img, offset});
+              offset += img.length;
             }
-            for (let i = 0; i < data.length; i++) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
-            return crc ^ 0xFFFFFFFF;
+            const head = Buffer.alloc(6);
+            head.writeUInt16LE(0, 0);
+            head.writeUInt16LE(1, 2);
+            head.writeUInt16LE(sizes.length, 4);
+            const dirs = images.map(img => {
+              const d = Buffer.alloc(16);
+              d.writeUInt8(img.w >= 256 ? 0 : img.w, 0);
+              d.writeUInt8(img.h >= 256 ? 0 : img.h, 1);
+              d.writeUInt16LE(1, 4);
+              d.writeUInt16LE(32, 6);
+              d.writeUInt32LE(img.data.length, 8);
+              d.writeUInt32LE(img.offset, 12);
+              return d;
+            });
+            return Buffer.concat([head, ...dirs, ...images.map(i => i.data)]);
           }
 
-          const color = { r: 102, g: 126, b: 234, a: 255 };
-          const sizes = [[1024, 'icon.png'], [32, '32x32.png'], [128, '128x128.png'], [256, '128x128@2x.png']];
-          for (const [size, name] of sizes) {
-            const png = createPNG(size, size, color.r, color.g, color.b, color.a);
-            fs.writeFileSync(path.join(iconsDir, name), png);
+          function createPNG(w, h, r, g, b, a) {
+            const sig = Buffer.from([0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A]);
+            const ihdr = Buffer.alloc(13);
+            ihdr.writeUInt32BE(w, 0);
+            ihdr.writeUInt32BE(h, 4);
+            ihdr.writeUInt8(8, 8);
+            ihdr.writeUInt8(6, 9);
+            const raw = Buffer.alloc(h * (1 + w * 4));
+            for (let y = 0; y < h; y++) {
+              raw[y * (1 + w * 4)] = 0;
+              for (let x = 0; x < w; x++) {
+                const i = y * (1 + w * 4) + 1 + x * 4;
+                raw[i] = r; raw[i+1] = g; raw[i+2] = b; raw[i+3] = a;
+              }
+            }
+            const chunk = (t, d) => {
+              const l = Buffer.alloc(4);
+              l.writeUInt32BE(d.length, 0);
+              const tb = Buffer.from(t);
+              const cr = Buffer.alloc(4);
+              let c = 0xFFFFFFFF;
+              const tbl = [];
+              for (let i = 0; i < 256; i++) { let x = i; for (let j = 0; j < 8; j++) x = (x & 1) ? (0xEDB88320 ^ (x >>> 1)) : (x >>> 1); tbl[i] = x; }
+              const cd = Buffer.concat([tb, d]);
+              for (let i = 0; i < cd.length; i++) c = tbl[(c ^ cd[i]) & 0xFF] ^ (c >>> 8);
+              cr.writeUInt32BE((c ^ 0xFFFFFFFF) >>> 0, 0);
+              return Buffer.concat([l, tb, d, cr]);
+            };
+            return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
           }
-          const png256 = createPNG(256, 256, color.r, color.g, color.b, color.a);
-          const icoHeader = Buffer.from([0x00, 0x00, 0x01, 0x00, 0x01, 0x00]);
-          const icoDir = Buffer.alloc(16);
-          icoDir.writeUInt8(0, 0);
-          icoDir.writeUInt8(0, 1);
-          icoDir.writeUInt8(0, 2);
-          icoDir.writeUInt8(0, 3);
-          icoDir.writeUInt16LE(1, 4);
-          icoDir.writeUInt16LE(32, 6);
-          icoDir.writeUInt32LE(png256.length, 8);
-          icoDir.writeUInt32LE(22, 12);
-          fs.writeFileSync(path.join(iconsDir, 'icon.ico'), Buffer.concat([icoHeader, icoDir, png256]));
-          fs.writeFileSync(path.join(iconsDir, 'icon.icns'), png256);
-          console.log('Icons created');
+
+          fs.writeFileSync(path.join(iconsDir, 'icon.ico'), createIco());
+          console.log('Created icon.ico');
+          const c = {r:102,g:126,b:234,a:255};
+          [[1024,'icon.png'],[32,'32x32.png'],[128,'128x128.png'],[256,'128x128@2x.png']].forEach(([s,n]) => {
+            fs.writeFileSync(path.join(iconsDir, n), createPNG(s, s, c.r, c.g, c.b, c.a));
+          });
+          fs.writeFileSync(path.join(iconsDir, 'icon.icns'), createPNG(256, 256, c.r, c.g, c.b, c.a));
+          console.log('All icons created!');
           NODESCRIPT
 
-      - name: Generate icons (Windows only)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "src-tauri\icons"
-          
-          # Download a valid ICO file from Tauri examples
-          $icoUrl = "https://raw.githubusercontent.com/tauri-apps/tauri/dev/examples/api/src-tauri/icons/icon.ico"
-          Invoke-WebRequest -Uri $icoUrl -OutFile "src-tauri\icons\icon.ico" -UseBasicParsing
-          Write-Host "Downloaded icon.ico"
-          
-          # Create PNG files
-          $pngUrl = "https://raw.githubusercontent.com/tauri-apps/tauri/dev/examples/api/src-tauri/icons/icon.png"
-          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\icon.png" -UseBasicParsing
-          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\32x32.png" -UseBasicParsing
-          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\128x128.png" -UseBasicParsing
-          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\128x128@2x.png" -UseBasicParsing
-          Invoke-WebRequest -Uri $pngUrl -OutFile "src-tauri\icons\icon.icns" -UseBasicParsing
-          Write-Host "Downloaded PNG files"
-          
-          Get-ChildItem "src-tauri\icons"
+      - name: Verify icons
+        shell: bash
+        run: ls -la src-tauri/icons/
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
