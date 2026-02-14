@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "identifier": "com.perfectmd.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../.next"
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../out"
   },
   "app": {
     "windows": [
