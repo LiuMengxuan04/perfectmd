@@ -47,6 +47,27 @@ jobs:
           npm install -g bun
           bun install
 
+      - name: Generate icons
+        run: |
+          mkdir -p src-tauri/icons
+          # Create placeholder icons using Node.js
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          
+          // Simple 1x1 PNG (blue pixel)
+          const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPj/HwADBwIAMCbHYQAAAABJRU5ErkJggg==', 'base64');
+          
+          const iconsDir = 'src-tauri/icons';
+          fs.writeFileSync(path.join(iconsDir, 'icon.png'), png);
+          fs.writeFileSync(path.join(iconsDir, '32x32.png'), png);
+          fs.writeFileSync(path.join(iconsDir, '128x128.png'), png);
+          fs.writeFileSync(path.join(iconsDir, '128x128@2x.png'), png);
+          fs.writeFileSync(path.join(iconsDir, 'icon.icns'), png);
+          fs.writeFileSync(path.join(iconsDir, 'icon.ico'), png);
+          console.log('Icons created');
+          "
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
