@@ -54,9 +54,10 @@ jobs:
         run: bun add -d sharp
 
       - name: Generate icons
+        shell: bash
         run: |
           mkdir -p src-tauri/icons
-          node -e "
+          cat > /tmp/generate-icons.js << 'SCRIPT_EOF'
           const sharp = require('sharp');
           const fs = require('fs');
           const path = require('path');
@@ -68,7 +69,7 @@ jobs:
             fs.mkdirSync(iconsDir, { recursive: true });
           }
 
-          const svg = '<svg width=\"1024\" height=\"1024\" xmlns=\"http://www.w3.org/2000/svg\"><defs><linearGradient id=\"grad\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"100%\"><stop offset=\"0%\" style=\"stop-color:#667eea;stop-opacity:1\" /><stop offset=\"100%\" style=\"stop-color:#764ba2;stop-opacity:1\" /></linearGradient></defs><rect width=\"100%\" height=\"100%\" fill=\"url(#grad)\" rx=\"128\"/><text x=\"50%\" y=\"58%\" dominant-baseline=\"middle\" text-anchor=\"middle\" fill=\"white\" font-size=\"500\" font-family=\"Arial\" font-weight=\"bold\">M</text></svg>';
+          const svg = '<svg width="1024" height="1024" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#667eea;stop-opacity:1" /><stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" /></linearGradient></defs><rect width="100%" height="100%" fill="url(#grad)" rx="128"/><text x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="500" font-family="Arial" font-weight="bold">M</text></svg>';
 
           (async () => {
             const sizes = [[1024, 'icon.png'], [32, '32x32.png'], [128, '128x128.png'], [256, '128x128@2x.png']];
@@ -99,11 +100,12 @@ jobs:
             console.log('Created icon.icns');
             console.log('Files:', fs.readdirSync(iconsDir));
           })();
-          "
+          SCRIPT_EOF
+          node /tmp/generate-icons.js
 
       - name: Verify icons exist
-        run: ls -la src-tauri/icons/
         shell: bash
+        run: ls -la src-tauri/icons/
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
