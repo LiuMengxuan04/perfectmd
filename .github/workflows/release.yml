@@ -58,7 +58,7 @@ jobs:
           npm install -g bun
           bun install
 
-      - name: Generate icons (no dependencies)
+      - name: Generate icons (RGBA format)
         shell: bash
         run: |
           mkdir -p src-tauri/icons
@@ -72,26 +72,27 @@ jobs:
             fs.mkdirSync(iconsDir, { recursive: true });
           }
 
-          function createPNG(width, height, r, g, b) {
+          function createPNG(width, height, r, g, b, a) {
             const signature = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
             const ihdrData = Buffer.alloc(13);
             ihdrData.writeUInt32BE(width, 0);
             ihdrData.writeUInt32BE(height, 4);
             ihdrData.writeUInt8(8, 8);
-            ihdrData.writeUInt8(2, 9);
+            ihdrData.writeUInt8(6, 9);   // color type 6 = RGBA
             ihdrData.writeUInt8(0, 10);
             ihdrData.writeUInt8(0, 11);
             ihdrData.writeUInt8(0, 12);
             const ihdr = createChunk('IHDR', ihdrData);
-            const rawData = Buffer.alloc(height * (1 + width * 3));
+            const rawData = Buffer.alloc(height * (1 + width * 4));
             for (let y = 0; y < height; y++) {
-              const rowStart = y * (1 + width * 3);
+              const rowStart = y * (1 + width * 4);
               rawData[rowStart] = 0;
               for (let x = 0; x < width; x++) {
-                const pixelStart = rowStart + 1 + x * 3;
+                const pixelStart = rowStart + 1 + x * 4;
                 rawData[pixelStart] = r;
                 rawData[pixelStart + 1] = g;
                 rawData[pixelStart + 2] = b;
+                rawData[pixelStart + 3] = a;
               }
             }
             const compressed = zlib.deflateSync(rawData);
@@ -138,20 +139,21 @@ jobs:
             entry.writeUInt8(0, 2);
             entry.writeUInt8(0, 3);
             entry.writeUInt16LE(1, 4);
-            entry.writeUInt16LE(24, 6);
+            entry.writeUInt16LE(32, 6);
             entry.writeUInt32LE(pngBuffer.length, 8);
             entry.writeUInt32LE(22, 12);
             return Buffer.concat([header, entry, pngBuffer]);
           }
 
-          const color = { r: 102, g: 126, b: 234 };
+          const color = { r: 102, g: 126, b: 234, a: 255 };
           const sizes = [[1024, 'icon.png'], [32, '32x32.png'], [128, '128x128.png'], [256, '128x128@2x.png']];
           for (const [size, name] of sizes) {
-            const png = createPNG(size, size, color.r, color.g, color.b);
+            const png = createPNG(size, size, color.r, color.g, color.b, color.a);
             fs.writeFileSync(path.join(iconsDir, name), png);
             console.log('Created ' + name);
           }
-          const png256 = createPNG(256, 256, color.r, color.g, color.b);
+
+          const png256 = createPNG(256, 256, color.r, color.g, color.b, color.a);
           const ico = createICO(png256);
           fs.writeFileSync(path.join(iconsDir, 'icon.ico'), ico);
           console.log('Created icon.ico');
