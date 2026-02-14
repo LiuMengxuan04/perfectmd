@@ -47,4 +47,20 @@ jobs:
       - name: Install frontend dependencies
         run: |
           npm install -g bun
-          bun
+          bun install
+
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'PerfectMD ${{ github.ref_name }}'
+          releaseBody: |
+            ## 下载安装
+            - Windows: 下载 .msi 文件双击安装
+            - macOS: 下载 .dmg 文件双击安装
+            - Linux: 下载 .deb 或 .AppImage 文件
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
