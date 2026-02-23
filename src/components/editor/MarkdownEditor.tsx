@@ -41,6 +41,9 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   })
   const isInternalChange = useRef(false)
   const shouldResetInlineTypingRef = useRef(false)
+  // Track IME composition state – while composing CJK/etc. input we must not
+  // intercept keydown events or manipulate the selection.
+  const isComposingRef = useRef(false)
 
   // Handle input changes
   const handleInput = useCallback(() => {
@@ -316,8 +319,24 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       if (currentLine === '-' || currentLine === '*') {
         e.preventDefault()
         if (!deleteMarkdownTrigger(selection, currentLine)) return false
-        ensureIsolatedBlock()
-        document.execCommand('insertUnorderedList', false)
+        // Ensure the current line lives in its own block before applying list,
+        // otherwise insertUnorderedList may absorb the previous line too.
+        const listBlock = ensureIsolatedBlock()
+        if (listBlock) {
+          // Convert the isolated block to a list manually to stay on correct line.
+          const ul = document.createElement('ul')
+          const li = document.createElement('li')
+          li.appendChild(document.createElement('br'))
+          ul.appendChild(li)
+          listBlock.parentNode!.replaceChild(ul, listBlock)
+          const r = document.createRange()
+          r.selectNodeContents(li)
+          r.collapse(true)
+          selection.removeAllRanges()
+          selection.addRange(r)
+        } else {
+          document.execCommand('insertUnorderedList', false)
+        }
         handleInput()
         return true
       }
@@ -325,8 +344,21 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       if (currentLine === '1.') {
         e.preventDefault()
         if (!deleteMarkdownTrigger(selection, currentLine)) return false
-        ensureIsolatedBlock()
-        document.execCommand('insertOrderedList', false)
+        const listBlock = ensureIsolatedBlock()
+        if (listBlock) {
+          const ol = document.createElement('ol')
+          const li = document.createElement('li')
+          li.appendChild(document.createElement('br'))
+          ol.appendChild(li)
+          listBlock.parentNode!.replaceChild(ol, listBlock)
+          const r = document.createRange()
+          r.selectNodeContents(li)
+          r.collapse(true)
+          selection.removeAllRanges()
+          selection.addRange(r)
+        } else {
+          document.execCommand('insertOrderedList', false)
+        }
         handleInput()
         return true
       }
@@ -508,31 +540,18 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
       replaceRange.insertNode(fragment)
 
-      const inlineTags = new Set(['strong', 'b', 'em', 'i', 's', 'del', 'code', 'a', 'u', 'span', 'font'])
       const caretRange = document.createRange()
-      // Place caret after the plain trailing space, then force it out of any
-      // inline formatting ancestor so future input is unformatted text.
-      caretRange.setStartAfter(trailingSpace)
+      // Place caret INSIDE the trailing-space text node (at its end) rather
+      // than after it.  setStartAfter() would position the caret at a parent-
+      // element boundary, and some browsers resolve that boundary with
+      // "affinity" toward the preceding <strong>/<em>/etc., causing the next
+      // typed character to inherit the inline formatting.  Positioning inside
+      // the text node is unambiguous — the browser knows the caret is in a
+      // plain-text context.
+      caretRange.setStart(trailingSpace, trailingSpace.length)
       caretRange.collapse(true)
       selection.removeAllRanges()
       selection.addRange(caretRange)
-
-      let node: Node | null = selection.anchorNode
-      while (node && node !== editorRef.current) {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          const el = node as HTMLElement
-          const tag = el.tagName.toLowerCase()
-          if (inlineTags.has(tag) && el.parentNode) {
-            const outRange = document.createRange()
-            outRange.setStartAfter(el)
-            outRange.collapse(true)
-            selection.removeAllRanges()
-            selection.addRange(outRange)
-            break
-          }
-        }
-        node = node.parentNode
-      }
 
       // Some browsers keep a hidden typing style state after rich-text edits.
       // Explicitly disable command-based inline styles so following input stays plain.
@@ -948,6 +967,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Do not intercept anything while an IME composition is in progress.
+    // e.nativeEvent.isComposing catches the first keydown on Safari/Firefox where
+    // compositionstart fires after keydown; isComposingRef covers subsequent keys.
+    if (e.nativeEvent.isComposing || isComposingRef.current) return
+
     if (e.key === 'Enter' && !e.shiftKey) {
       const inBulletList = document.queryCommandState('insertUnorderedList')
       const inOrderedList = document.queryCommandState('insertOrderedList')
@@ -1004,17 +1028,16 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         !e.metaKey &&
         !e.altKey
       ) {
-        const stillInsideInline = isCaretInsideInlineFormatting()
+        // Just clear the flag and let the browser / IME handle the key
+        // naturally.  We must NOT modify the DOM selection or call
+        // execCommand here — on macOS (and some Windows IMEs),
+        // compositionstart fires AFTER keydown, so any DOM/selection
+        // manipulation during keydown breaks the IME and causes the
+        // first character to be committed as a raw English letter.
+        // The inline conversion (applyInlineMarkdownShortcut) already
+        // positioned the caret inside a plain-text node and cleared
+        // the formatting state; that is sufficient.
         shouldResetInlineTypingRef.current = false
-        if (stillInsideInline) {
-          e.preventDefault()
-          ensureCaretOutsideInlineFormatting()
-          clearInlineTypingState()
-          clearColorTypingState()
-          insertPlainTextAtCaret(e.key)
-          handleInput()
-          return
-        }
       }
     }
 
@@ -1048,7 +1071,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, isCaretInsideInlineFormatting])
 
   return (
     <div className="relative h-full">
@@ -1065,6 +1088,13 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         className="prose-editor h-full min-h-[calc(100vh-200px)] p-8 outline-none focus:outline-none overflow-auto"
         onInput={handleInput}
         onKeyDown={handleKeyDown}
+        onCompositionStart={() => { isComposingRef.current = true }}
+        onCompositionEnd={() => {
+          isComposingRef.current = false
+          // After IME commits text, reset the inline-typing state so the next
+          // real keydown doesn't accidentally inherit inline formatting.
+          shouldResetInlineTypingRef.current = false
+        }}
         suppressContentEditableWarning
         data-placeholder="Start writing..."
       />
