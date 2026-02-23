@@ -45,6 +45,20 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   // intercept keydown events or manipulate the selection.
   const isComposingRef = useRef(false)
 
+  // Link editing state
+  const [editingLink, setEditingLink] = useState<{
+    element: HTMLAnchorElement
+    text: string
+    href: string
+    position: { top: number; left: number }
+  } | null>(null)
+  const linkPopoverRef = useRef<HTMLDivElement>(null)
+
+  // Image resize state
+  const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null)
+  const [overlayRect, setOverlayRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
+  const resizeDragRef = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number; aspectRatio: number; corner: string } | null>(null)
+
   // Handle input changes
   const handleInput = useCallback(() => {
     if (editorRef.current) {
@@ -657,12 +671,138 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return true
   }, [getCurrentBlock])
 
+  // ---- Image resize: overlay position tracking ----
+  useEffect(() => {
+    if (!selectedImage) {
+      setOverlayRect(null)
+      return
+    }
+
+    const recalc = () => {
+      if (!selectedImage.isConnected) {
+        setSelectedImage(null)
+        return
+      }
+      const containerEl = editorRef.current?.parentElement
+      if (!containerEl) return
+      const containerRect = containerEl.getBoundingClientRect()
+      const imgRect = selectedImage.getBoundingClientRect()
+      setOverlayRect({
+        top: imgRect.top - containerRect.top,
+        left: imgRect.left - containerRect.left,
+        width: imgRect.width,
+        height: imgRect.height,
+      })
+    }
+
+    recalc()
+
+    const editor = editorRef.current
+    editor?.addEventListener('scroll', recalc)
+    window.addEventListener('resize', recalc)
+    window.addEventListener('scroll', recalc, true)
+
+    return () => {
+      editor?.removeEventListener('scroll', recalc)
+      window.removeEventListener('resize', recalc)
+      window.removeEventListener('scroll', recalc, true)
+    }
+  }, [selectedImage])
+
+  // ---- Image resize: drag handling ----
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const drag = resizeDragRef.current
+      if (!drag || !selectedImage) return
+      e.preventDefault()
+
+      const dx = e.clientX - drag.startX
+      const isLeft = drag.corner === 'nw' || drag.corner === 'sw'
+      const widthDelta = isLeft ? -dx : dx
+      const newWidth = Math.max(50, drag.startWidth + widthDelta)
+      const newHeight = Math.max(50, newWidth / drag.aspectRatio)
+
+      selectedImage.style.width = `${Math.round(newWidth)}px`
+      selectedImage.style.height = `${Math.round(newHeight)}px`
+      selectedImage.removeAttribute('width')
+      selectedImage.removeAttribute('height')
+
+      // Update overlay to match new size
+      const containerEl = editorRef.current?.parentElement
+      if (containerEl) {
+        const containerRect = containerEl.getBoundingClientRect()
+        const imgRect = selectedImage.getBoundingClientRect()
+        setOverlayRect({
+          top: imgRect.top - containerRect.top,
+          left: imgRect.left - containerRect.left,
+          width: imgRect.width,
+          height: imgRect.height,
+        })
+      }
+    }
+
+    const handleMouseUp = () => {
+      if (resizeDragRef.current) {
+        resizeDragRef.current = null
+        handleInput()
+      }
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [selectedImage, handleInput])
+
+  // ---- Image resize: keyboard (Escape to deselect, Delete/Backspace to remove) ----
+  useEffect(() => {
+    if (!selectedImage) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setSelectedImage(null)
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        e.stopPropagation()
+        const next = selectedImage.nextSibling
+        const parent = selectedImage.parentNode
+        selectedImage.remove()
+        setSelectedImage(null)
+        // Place caret after where the image was
+        if (parent && editorRef.current?.contains(parent)) {
+          const sel = window.getSelection()
+          if (sel) {
+            const r = document.createRange()
+            if (next && parent.contains(next)) {
+              r.setStartBefore(next)
+            } else {
+              r.selectNodeContents(parent)
+              r.collapse(false)
+            }
+            r.collapse(true)
+            sel.removeAllRanges()
+            sel.addRange(r)
+          }
+        }
+        handleInput()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [selectedImage, handleInput])
+
   // Sync content to editor when it changes externally
   useEffect(() => {
     if (editorRef.current && !isInternalChange.current) {
       const currentHtml = editorRef.current.innerHTML
       // Only update if the content is different and editor is not focused
       if (document.activeElement !== editorRef.current && currentHtml !== content) {
+        setSelectedImage(null)
         editorRef.current.innerHTML = content || '<p><br></p>'
       }
     }
@@ -745,13 +885,25 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       // Detect current format
       const detectedFormat = detectFormatState(range.commonAncestorContainer)
       setFormatState(detectedFormat)
-      
+
+      // Clamp toolbar position to stay within viewport
+      const toolbarWidth = 580 // approximate toolbar width
+      const toolbarHeight = 50
+      let top = rect.top - toolbarHeight
+      // Calculate left edge (center of selection minus half toolbar width)
+      let left = rect.left + rect.width / 2 - toolbarWidth / 2
+
+      // Clamp: keep at least 8px from viewport edges
+      left = Math.max(8, Math.min(left, window.innerWidth - toolbarWidth - 8))
+
+      // If toolbar would go above viewport, show below selection
+      if (top < 8) {
+        top = rect.bottom + 8
+      }
+
       setToolbarState({
         visible: true,
-        position: {
-          top: rect.top - 50 + window.scrollY,
-          left: rect.left + rect.width / 2,
-        },
+        position: { top, left },
       })
     } else {
       setToolbarState((prev) => ({ ...prev, visible: false }))
@@ -1088,6 +1240,41 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         className="prose-editor h-full min-h-[calc(100vh-200px)] p-8 outline-none focus:outline-none overflow-auto"
         onInput={handleInput}
         onKeyDown={handleKeyDown}
+        onClick={(e) => {
+          const target = e.target as HTMLElement
+          // Handle link clicks
+          const linkEl = target.closest('a') as HTMLAnchorElement | null
+          if (linkEl && editorRef.current?.contains(linkEl)) {
+            e.preventDefault()
+            const linkRect = linkEl.getBoundingClientRect()
+            // Use fixed positioning like FloatingToolbar, clamped to viewport
+            const popoverWidth = 280
+            let left = linkRect.left + linkRect.width / 2 - popoverWidth / 2
+            left = Math.max(8, Math.min(left, window.innerWidth - popoverWidth - 8))
+            let top = linkRect.bottom + 6
+            // If popover would go below viewport, show above
+            if (top + 200 > window.innerHeight) {
+              top = linkRect.top - 200 - 6
+            }
+            setEditingLink({
+              element: linkEl,
+              text: linkEl.textContent || '',
+              href: linkEl.getAttribute('href') || '',
+              position: { top, left },
+            })
+            return
+          }
+          // Close link popover when clicking elsewhere
+          if (editingLink) {
+            setEditingLink(null)
+          }
+          if (target.tagName === 'IMG') {
+            setSelectedImage(target as HTMLImageElement)
+            window.getSelection()?.removeAllRanges()
+          } else if (selectedImage) {
+            setSelectedImage(null)
+          }
+        }}
         onCompositionStart={() => { isComposingRef.current = true }}
         onCompositionEnd={() => {
           isComposingRef.current = false
@@ -1098,7 +1285,175 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         suppressContentEditableWarning
         data-placeholder="Start writing..."
       />
-      
+
+      {/* Link editing popover */}
+      {editingLink && (
+        <div
+          ref={linkPopoverRef}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="fixed z-50 rounded-lg border bg-background/95 px-3 py-3 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60"
+          style={{
+            top: editingLink.position.top,
+            left: editingLink.position.left,
+            minWidth: 280,
+          }}
+        >
+          <div className="flex flex-col gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground font-medium">文本</span>
+              <input
+                type="text"
+                autoFocus
+                value={editingLink.text}
+                onChange={(e) => setEditingLink(prev => prev ? { ...prev, text: e.target.value } : null)}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') {
+                    editingLink.element.textContent = editingLink.text
+                    editingLink.element.setAttribute('href', editingLink.href)
+                    setEditingLink(null)
+                    handleInput()
+                  } else if (e.key === 'Escape') {
+                    setEditingLink(null)
+                  }
+                }}
+                className="w-full rounded-md border bg-background px-2 py-1 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground font-medium">链接</span>
+              <input
+                type="text"
+                value={editingLink.href}
+                onChange={(e) => setEditingLink(prev => prev ? { ...prev, href: e.target.value } : null)}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') {
+                    editingLink.element.textContent = editingLink.text
+                    editingLink.element.setAttribute('href', editingLink.href)
+                    setEditingLink(null)
+                    handleInput()
+                  } else if (e.key === 'Escape') {
+                    setEditingLink(null)
+                  }
+                }}
+                className="w-full rounded-md border bg-background px-2 py-1 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/30"
+              />
+            </label>
+            <div className="flex gap-1.5 justify-end pt-1">
+              <button
+                onClick={() => {
+                  const href = editingLink.href
+                  if (href) window.open(href, '_blank', 'noopener,noreferrer')
+                }}
+                className="rounded-md border px-2.5 py-1 text-xs hover:bg-accent transition-colors"
+              >
+                打开链接
+              </button>
+              <button
+                onClick={() => {
+                  const el = editingLink.element
+                  const text = document.createTextNode(el.textContent || '')
+                  el.parentNode?.replaceChild(text, el)
+                  setEditingLink(null)
+                  handleInput()
+                }}
+                className="rounded-md border border-destructive/30 px-2.5 py-1 text-xs text-destructive hover:bg-destructive/10 transition-colors"
+              >
+                移除链接
+              </button>
+              <button
+                onClick={() => {
+                  editingLink.element.textContent = editingLink.text
+                  editingLink.element.setAttribute('href', editingLink.href)
+                  setEditingLink(null)
+                  handleInput()
+                }}
+                className="rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image resize overlay */}
+      {selectedImage && overlayRect && (
+        <div
+          style={{
+            position: 'absolute',
+            top: overlayRect.top,
+            left: overlayRect.left,
+            width: overlayRect.width,
+            height: overlayRect.height,
+            pointerEvents: 'none',
+            zIndex: 50,
+          }}
+        >
+          {/* Selection border */}
+          <div style={{ position: 'absolute', inset: 0, border: '2px solid #3b82f6', borderRadius: 4, pointerEvents: 'none' }} />
+          {/* Corner resize handles */}
+          {(['nw', 'ne', 'sw', 'se'] as const).map((corner) => {
+            const isTop = corner.startsWith('n')
+            const isLeft = corner.endsWith('w')
+            const cursors: Record<string, string> = { nw: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', se: 'nwse-resize' }
+            return (
+              <div
+                key={corner}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (!selectedImage) return
+                  resizeDragRef.current = {
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    startWidth: selectedImage.offsetWidth,
+                    startHeight: selectedImage.offsetHeight,
+                    aspectRatio: selectedImage.offsetWidth / (selectedImage.offsetHeight || 1),
+                    corner,
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  width: 10,
+                  height: 10,
+                  backgroundColor: '#3b82f6',
+                  border: '2px solid white',
+                  borderRadius: 2,
+                  top: isTop ? -5 : undefined,
+                  bottom: isTop ? undefined : -5,
+                  left: isLeft ? -5 : undefined,
+                  right: isLeft ? undefined : -5,
+                  cursor: cursors[corner],
+                  pointerEvents: 'all',
+                }}
+              />
+            )
+          })}
+          {/* Size indicator */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: -28,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(0,0,0,0.75)',
+              color: 'white',
+              padding: '2px 8px',
+              borderRadius: 4,
+              fontSize: 11,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              lineHeight: '18px',
+            }}
+          >
+            {Math.round(overlayRect.width)} × {Math.round(overlayRect.height)}
+          </div>
+        </div>
+      )}
+
       <style jsx global>{`
         .prose-editor:empty:before {
           content: attr(data-placeholder);
@@ -1225,6 +1580,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         .prose-editor a {
           color: #3b82f6;
           text-decoration: underline;
+          cursor: pointer;
+        }
+
+        .prose-editor a:hover {
+          color: #2563eb;
         }
         
         .prose-editor hr {
@@ -1237,6 +1597,12 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           max-width: 100%;
           height: auto;
           border-radius: 6px;
+          cursor: pointer;
+          transition: opacity 0.15s;
+        }
+
+        .prose-editor img:hover {
+          opacity: 0.9;
         }
         
         .prose-editor table {

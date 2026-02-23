@@ -100,7 +100,6 @@ export function FloatingToolbar({ onApplyStyle, position, visible, formatState }
       style={{
         top: position.top,
         left: position.left,
-        transform: 'translateX(-50%)',
       }}
     >
       {/* Text formatting buttons */}
