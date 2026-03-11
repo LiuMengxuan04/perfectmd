@@ -174,13 +174,24 @@ jobs:
           console.log('All icons created:', fs.readdirSync(iconsDir));
           "
 
-      - name: Verify icons
+      - name: Verify icons (Unix)
+        if: matrix.platform != 'windows-latest'
         run: |
           echo "=== Icons directory ==="
-          ls -la src-tauri/icons/ || dir src-tauri\\icons
+          ls -la src-tauri/icons/
           echo ""
           echo "=== Verifying ICO ==="
-          cat src-tauri/icons/icon.ico | head -c 6 | xxd || type src-tauri\\icons\\icon.ico
+          cat src-tauri/icons/icon.ico | head -c 6 | xxd
+
+      - name: Verify icons (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          Write-Host "=== Icons directory ==="
+          Get-ChildItem src-tauri/icons
+          Write-Host ""
+          Write-Host "=== Verifying ICO ==="
+          Get-Item src-tauri/icons/icon.ico | Format-List Length, Name, FullName
 
       - name: Build the app
         uses: tauri-apps/tauri-action@v0

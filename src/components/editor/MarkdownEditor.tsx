@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { TopToolbar } from './TopToolbar'
+import katex from 'katex'
 
 interface MarkdownEditorProps {
   content: string
@@ -36,6 +37,7 @@ const DEFAULT_FONT_SIZE = 16
 
 export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
+  const savedRangeRef = useRef<Range | null>(null)
   const [formatState, setFormatState] = useState<FormatState>(DEFAULT_FORMAT_STATE)
   const isInternalChange = useRef(false)
   const shouldResetInlineTypingRef = useRef(false)
@@ -59,6 +61,32 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         : anchorNode as HTMLElement | null
       element?.scrollIntoView({ block: 'nearest' })
     })
+  }, [])
+
+  const restoreSavedSelection = useCallback((): Selection | null => {
+    const selection = window.getSelection()
+    const editor = editorRef.current
+    if (!selection || !editor) return null
+
+    if (selection.rangeCount > 0 && editor.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      savedRangeRef.current = selection.getRangeAt(0).cloneRange()
+      return selection
+    }
+
+    if (savedRangeRef.current) {
+      selection.removeAllRanges()
+      selection.addRange(savedRangeRef.current.cloneRange())
+      return selection
+    }
+
+    editor.focus()
+    const range = document.createRange()
+    range.selectNodeContents(editor)
+    range.collapse(false)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    savedRangeRef.current = range.cloneRange()
+    return selection
   }, [])
 
   const getTextBeforeCaretInBlock = useCallback((block: HTMLElement, selection: Selection): string => {
@@ -728,6 +756,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     const range = selection.getRangeAt(0)
     if (editorRef.current.contains(range.commonAncestorContainer)) {
+      savedRangeRef.current = range.cloneRange()
       const detectedFormat = detectFormatState(range.commonAncestorContainer)
       setFormatState(detectedFormat)
     } else {
@@ -797,44 +826,143 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
   const wrapSelectionWithStyle = useCallback(
     (property: 'color' | 'backgroundColor', value: string, clearToken: string): boolean => {
-      const selection = window.getSelection()
+      const selection = restoreSavedSelection()
       if (!selection || selection.isCollapsed || !selection.rangeCount) return false
 
       const range = selection.getRangeAt(0)
       const extracted = range.extractContents()
-      const span = document.createElement('span')
+
+      // Remove existing inline color/highlight styles from extracted nodes
+      // so switching color/highlight works consistently.
+      const allElements = extracted.querySelectorAll('*')
+      allElements.forEach((el) => {
+        (el as HTMLElement).style.removeProperty(property === 'color' ? 'color' : 'background-color')
+      })
 
       if (value === clearToken) {
-        span.style[property] = property === 'color' ? 'inherit' : 'transparent'
+        const marker = document.createTextNode('')
+        range.insertNode(marker)
+        marker.parentNode?.insertBefore(extracted, marker)
+        const caret = document.createRange()
+        caret.setStartAfter(marker)
+        caret.collapse(true)
+        marker.parentNode?.removeChild(marker)
+        selection.removeAllRanges()
+        selection.addRange(caret)
+        savedRangeRef.current = caret.cloneRange()
+        return true
       } else {
+        const span = document.createElement('span')
         span.style[property] = value
+        span.appendChild(extracted)
+        range.insertNode(span)
+        const caret = document.createRange()
+        caret.setStartAfter(span)
+        caret.collapse(true)
+        selection.removeAllRanges()
+        selection.addRange(caret)
+        savedRangeRef.current = caret.cloneRange()
+        return true
       }
-
-      span.appendChild(extracted)
-      range.insertNode(span)
-
-      // Collapse caret to end so subsequent typing starts outside selection.
-      const caret = document.createRange()
-      caret.setStartAfter(span)
-      caret.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(caret)
-
-      return true
     },
-    []
+    [restoreSavedSelection]
   )
 
   const insertHtmlAtCaret = useCallback((html: string) => {
+    restoreSavedSelection()
     document.execCommand('insertHTML', false, html)
     scrollCaretIntoView()
-  }, [scrollCaretIntoView])
+  }, [restoreSavedSelection, scrollCaretIntoView])
+
+  const isSelectionInsideCodeBlock = useCallback((): boolean => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editorRef.current) return false
+    const anchor = selection.anchorNode
+    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
+    if (!element) return false
+    const pre = element.closest('pre')
+    return !!pre && editorRef.current.contains(pre)
+  }, [])
+
+  const getCurrentTableCell = useCallback((): HTMLTableCellElement | null => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editorRef.current) return null
+    const anchor = selection.anchorNode
+    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
+    if (!element) return null
+    const cell = element.closest('td, th') as HTMLTableCellElement | null
+    if (!cell) return null
+    return editorRef.current.contains(cell) ? cell : null
+  }, [])
+
+  const renderFormulaElement = useCallback((el: HTMLElement, latex: string) => {
+    const normalized = latex.trim()
+    el.dataset.latex = normalized
+    el.classList.add('formula-inline')
+    if (!normalized) {
+      el.innerHTML = '<span class="formula-inline-placeholder">公式</span>'
+      return
+    }
+    try {
+      katex.render(normalized, el, { throwOnError: false, displayMode: false })
+    } catch {
+      el.textContent = normalized
+    }
+  }, [])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+
+    const handleFormulaDoubleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      const formula = target?.closest('.formula-inline') as HTMLElement | null
+      if (!formula || !editor.contains(formula)) return
+
+      const currentLatex = formula.dataset.latex || ''
+      const nextLatex = prompt('编辑公式（LaTeX）', currentLatex)
+      if (nextLatex === null) return
+      renderFormulaElement(formula, nextLatex)
+      handleInput()
+    }
+
+    editor.addEventListener('dblclick', handleFormulaDoubleClick)
+    return () => editor.removeEventListener('dblclick', handleFormulaDoubleClick)
+  }, [handleInput, renderFormulaElement])
+
+  const applyFontSize = useCallback((size: number) => {
+    const selection = restoreSavedSelection()
+    if (!selection || !selection.rangeCount || selection.isCollapsed) return
+    const range = selection.getRangeAt(0)
+    const selectedText = selection.toString()
+    if (!selectedText.trim()) return
+
+    const commonEl = (range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+      ? range.commonAncestorContainer.parentElement
+      : range.commonAncestorContainer as HTMLElement | null)
+    const existingSpan = commonEl?.closest('.font-size-span') as HTMLElement | null
+    if (existingSpan) {
+      existingSpan.style.fontSize = `${size}px`
+      existingSpan.style.lineHeight = '1.6'
+      handleInput()
+      return
+    }
+
+    const fragment = range.extractContents()
+    const fontSpan = document.createElement('span')
+    fontSpan.className = 'font-size-span'
+    fontSpan.style.fontSize = `${size}px`
+    fontSpan.style.lineHeight = '1.6'
+    fontSpan.appendChild(fragment)
+    range.insertNode(fontSpan)
+    selectElement(fontSpan)
+    handleInput()
+  }, [handleInput, restoreSavedSelection, selectElement])
 
   // Apply style to selected text
   const applyStyle = useCallback((style: string, value?: string) => {
-    const selection = window.getSelection()
-    if (!selection) return
-
+    const selection = restoreSavedSelection()
+    if (!selection || !selection.rangeCount) return
     const range = selection.getRangeAt(0)
     const selectedText = selection.toString()
 
@@ -874,40 +1002,18 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         clearInlineTypingState()
         break
       case 'fontSize': {
-        const fontSpan = document.createElement('span')
-        fontSpan.className = 'font-size-span'
-        fontSpan.style.fontSize = value || '16px'
-        fontSpan.textContent = selectedText
-        range.deleteContents()
-        range.insertNode(fontSpan)
-        selectElement(fontSpan)
-        handleInput()
+        const numeric = Number((value || '16px').replace('px', ''))
+        applyFontSize(Math.max(MIN_FONT_SIZE, Math.min(numeric, MAX_FONT_SIZE)))
         return
       }
       case 'fontSizeIncrease': {
         const currentSize = getFontSizeFromNode(range.commonAncestorContainer)
-        const newSize = Math.min(currentSize + FONT_SIZE_STEP, MAX_FONT_SIZE)
-        const fontSpan = document.createElement('span')
-        fontSpan.className = 'font-size-span'
-        fontSpan.style.fontSize = `${newSize}px`
-        fontSpan.textContent = selectedText
-        range.deleteContents()
-        range.insertNode(fontSpan)
-        selectElement(fontSpan)
-        handleInput()
+        applyFontSize(Math.min(currentSize + FONT_SIZE_STEP, MAX_FONT_SIZE))
         return
       }
       case 'fontSizeDecrease': {
         const currentSize = getFontSizeFromNode(range.commonAncestorContainer)
-        const newSize = Math.max(currentSize - FONT_SIZE_STEP, MIN_FONT_SIZE)
-        const fontSpan = document.createElement('span')
-        fontSpan.className = 'font-size-span'
-        fontSpan.style.fontSize = `${newSize}px`
-        fontSpan.textContent = selectedText
-        range.deleteContents()
-        range.insertNode(fontSpan)
-        selectElement(fontSpan)
-        handleInput()
+        applyFontSize(Math.max(currentSize - FONT_SIZE_STEP, MIN_FONT_SIZE))
         return
       }
       case 'code': {
@@ -951,24 +1057,111 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         setFormatState((prev) => ({ ...prev, heading: null }))
         break
       case 'table':
-        insertHtmlAtCaret(
-          '<table><thead><tr><th>Header 1</th><th>Header 2</th></tr></thead><tbody><tr><td>Cell 1</td><td>Cell 2</td></tr></tbody></table><p><br></p>'
-        )
+        {
+          const rowsInput = prompt('表格行数（>=1）', '3')
+          const colsInput = prompt('表格列数（>=1）', '3')
+          const rows = Math.max(1, Number(rowsInput || 3) || 3)
+          const cols = Math.max(1, Number(colsInput || 3) || 3)
+          const headers = Array.from({ length: cols }, (_, i) => `<th>Header ${i + 1}</th>`).join('')
+          const bodyRows = Array.from({ length: rows - 1 }, (_, rowIndex) => {
+            const cells = Array.from({ length: cols }, (_, colIndex) => `<td>Cell ${rowIndex + 1}-${colIndex + 1}</td>`).join('')
+            return `<tr>${cells}</tr>`
+          }).join('')
+          insertHtmlAtCaret(`<table><thead><tr>${headers}</tr></thead><tbody>${bodyRows}</tbody></table><p><br></p>`)
+        }
         break
       case 'codeBlock':
-        insertHtmlAtCaret('<pre><code>// code</code></pre><p><br></p>')
+        insertHtmlAtCaret('<pre class="editor-code-block"><code><br></code></pre><p><br></p>')
         break
       case 'formula':
-        insertHtmlAtCaret('<div class="formula-block">$$ E = mc^2 $$</div><p><br></p>')
+        {
+          const latex = selectedText.trim()
+          const formula = document.createElement('span')
+          formula.contentEditable = 'false'
+          formula.className = 'formula-inline'
+          renderFormulaElement(formula, latex)
+
+          if (!selection.isCollapsed) {
+            range.deleteContents()
+          }
+          range.insertNode(formula)
+          const space = document.createTextNode(' ')
+          formula.parentNode?.insertBefore(space, formula.nextSibling)
+          const caret = document.createRange()
+          caret.setStartAfter(space)
+          caret.collapse(true)
+          selection.removeAllRanges()
+          selection.addRange(caret)
+          savedRangeRef.current = caret.cloneRange()
+        }
         break
+      case 'tableAddRow': {
+        const cell = getCurrentTableCell()
+        if (!cell) break
+        const row = cell.parentElement as HTMLTableRowElement
+        const table = row.closest('table')
+        if (!table) break
+        const newRow = document.createElement('tr')
+        const cellsCount = row.cells.length
+        for (let i = 0; i < cellsCount; i += 1) {
+          const td = document.createElement('td')
+          td.textContent = ''
+          newRow.appendChild(td)
+        }
+        row.parentElement?.insertBefore(newRow, row.nextSibling)
+        break
+      }
+      case 'tableRemoveRow': {
+        const cell = getCurrentTableCell()
+        if (!cell) break
+        const row = cell.parentElement as HTMLTableRowElement
+        const section = row.parentElement
+        if (!section || section.children.length <= 1) break
+        section.removeChild(row)
+        break
+      }
+      case 'tableAddColumn': {
+        const cell = getCurrentTableCell()
+        if (!cell) break
+        const cellIndex = cell.cellIndex
+        const table = cell.closest('table')
+        if (!table) break
+        table.querySelectorAll('tr').forEach((tr) => {
+          const isHeader = tr.parentElement?.tagName.toLowerCase() === 'thead'
+          const newCell = document.createElement(isHeader ? 'th' : 'td')
+          newCell.textContent = ''
+          const target = tr.children[cellIndex + 1] || null
+          tr.insertBefore(newCell, target)
+        })
+        break
+      }
+      case 'tableRemoveColumn': {
+        const cell = getCurrentTableCell()
+        if (!cell) break
+        const cellIndex = cell.cellIndex
+        const table = cell.closest('table')
+        if (!table) break
+        table.querySelectorAll('tr').forEach((tr) => {
+          if (tr.children.length > 1) {
+            tr.removeChild(tr.children[cellIndex])
+          }
+        })
+        break
+      }
     }
 
     // Trigger content update
     handleInput()
-  }, [clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, getFontSizeFromNode, insertHtmlAtCaret, selectElement, wrapSelectionWithStyle])
+  }, [applyFontSize, clearInlineTypingState, ensureCaretOutsideInlineFormatting, getCurrentTableCell, getFontSizeFromNode, handleInput, insertHtmlAtCaret, renderFormulaElement, restoreSavedSelection, wrapSelectionWithStyle])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && isSelectionInsideCodeBlock()) {
+      // Keep native Enter behavior in code blocks so text after caret
+      // moves to the next line correctly.
+      return
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       const inBulletList = document.queryCommandState('insertUnorderedList')
       const inOrderedList = document.queryCommandState('insertOrderedList')
@@ -1072,7 +1265,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, scrollCaretIntoView])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isSelectionInsideCodeBlock, scrollCaretIntoView])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -1104,12 +1297,22 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         .prose-editor {
           line-height: 1.8;
           font-size: 16px;
+          --pmd-link-color: #3b82f6;
+          --pmd-code-bg: var(--muted);
+          --pmd-code-fg: var(--foreground);
+          --pmd-code-border: var(--border);
+          --pmd-table-border: var(--border);
+          --pmd-table-header-bg: var(--muted);
+          --pmd-table-cell-bg: transparent;
+          --pmd-formula-bg: transparent;
+          --pmd-formula-fg: var(--foreground);
+          --pmd-formula-border: var(--border);
         }
         
         /* Font size spans - maintain consistent line height */
         .prose-editor .font-size-span {
           display: inline;
-          line-height: 1.5;
+          line-height: 1.6;
           vertical-align: baseline;
         }
         
@@ -1152,11 +1355,14 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         
         .prose-editor pre {
-          background-color: #1e1e1e;
-          color: #d4d4d4;
+          background-color: var(--pmd-code-bg);
+          color: var(--pmd-code-fg);
+          border: 1px solid var(--pmd-code-border);
           padding: 1em;
           border-radius: 6px;
           overflow-x: auto;
+          white-space: pre-wrap;
+          line-height: 1.6;
         }
         
         .prose-editor pre code {
@@ -1215,7 +1421,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         
         .prose-editor a {
-          color: #3b82f6;
+          color: var(--pmd-link-color);
           text-decoration: underline;
         }
         
@@ -1239,23 +1445,35 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         
         .prose-editor th,
         .prose-editor td {
-          border: 1px solid var(--border);
+          border: 1px solid var(--pmd-table-border);
           padding: 0.5em 1em;
+          background: var(--pmd-table-cell-bg);
         }
         
         .prose-editor th {
-          background-color: var(--muted);
+          background-color: var(--pmd-table-header-bg);
           font-weight: 600;
         }
 
-        .prose-editor .formula-block {
-          margin: 1em 0;
-          border-radius: 6px;
-          border: 1px dashed var(--border);
-          background: var(--muted);
-          padding: 0.75em 1em;
-          font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
-          white-space: pre-wrap;
+        .prose-editor .formula-inline {
+          display: inline-flex;
+          align-items: center;
+          border: 1px solid var(--pmd-formula-border);
+          border-radius: 4px;
+          padding: 0.1em 0.3em;
+          margin: 0 0.1em;
+          color: var(--pmd-formula-fg);
+          background: var(--pmd-formula-bg);
+          cursor: pointer;
+        }
+
+        .prose-editor .formula-inline .katex {
+          color: var(--pmd-formula-fg);
+        }
+
+        .prose-editor .formula-inline-placeholder {
+          color: var(--muted-foreground);
+          font-size: 0.85em;
         }
         
         .prose-editor strong,

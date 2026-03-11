@@ -23,6 +23,8 @@ import {
   Table,
   Sigma,
   Braces,
+  Rows3,
+  Columns3,
 } from 'lucide-react'
 
 interface FormatState {
@@ -89,6 +91,10 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
     { icon: Code, title: 'Inline Code', style: 'code', active: false },
   ]
 
+  const preventToolbarMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+  }
+
   return (
     <div className="sticky top-0 z-20 flex flex-wrap items-center gap-0.5 border-b bg-background/95 px-2 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       {toolbarButtons.map((btn) => (
@@ -97,6 +103,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
           variant={btn.active ? 'secondary' : 'ghost'}
           size="sm"
           className={`h-8 w-8 p-0 ${btn.active ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : ''}`}
+          onMouseDown={preventToolbarMouseDown}
           onClick={() => onApplyStyle(btn.style)}
           title={btn.title}
         >
@@ -108,7 +115,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
 
       <Popover open={showColorPicker} onOpenChange={setShowColorPicker}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Text Color">
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Text Color" onMouseDown={preventToolbarMouseDown}>
             <Palette className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
@@ -120,6 +127,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
                 className="flex h-6 w-6 items-center justify-center rounded border transition-transform hover:scale-110"
                 style={{ backgroundColor: color.value === 'inherit' ? 'transparent' : color.value }}
                 title={color.name}
+                onMouseDown={preventToolbarMouseDown}
                 onClick={() => {
                   onApplyStyle('color', color.value)
                   setShowColorPicker(false)
@@ -136,7 +144,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
 
       <Popover open={showHighlightPicker} onOpenChange={setShowHighlightPicker}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Highlight">
+          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Highlight" onMouseDown={preventToolbarMouseDown}>
             <Highlighter className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
@@ -148,6 +156,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
                 className="flex h-6 w-6 items-center justify-center rounded border transition-transform hover:scale-110"
                 style={{ backgroundColor: color.value === 'transparent' ? undefined : color.value }}
                 title={color.name}
+                onMouseDown={preventToolbarMouseDown}
                 onClick={() => {
                   onApplyStyle('highlight', color.value)
                   setShowHighlightPicker(false)
@@ -167,6 +176,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
           variant="ghost"
           size="sm"
           className="h-8 w-8 p-0"
+          onMouseDown={preventToolbarMouseDown}
           onClick={() => onApplyStyle('fontSizeDecrease')}
           title="Decrease Font Size"
         >
@@ -175,7 +185,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
 
         <Popover open={showFontSizePicker} onOpenChange={setShowFontSizePicker}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Font Size">
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Font Size" onMouseDown={preventToolbarMouseDown}>
               <Type className="h-4 w-4" />
             </Button>
           </PopoverTrigger>
@@ -185,6 +195,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
                 <button
                   key={size.value}
                   className="rounded px-2 py-1 text-left text-sm hover:bg-accent"
+                  onMouseDown={preventToolbarMouseDown}
                   onClick={() => {
                     onApplyStyle('fontSize', size.value)
                     setShowFontSizePicker(false)
@@ -201,6 +212,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
           variant="ghost"
           size="sm"
           className="h-8 w-8 p-0"
+          onMouseDown={preventToolbarMouseDown}
           onClick={() => onApplyStyle('fontSizeIncrease')}
           title="Increase Font Size"
         >
@@ -214,6 +226,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
         variant={formatState.heading === null ? 'secondary' : 'ghost'}
         size="sm"
         className="h-8 w-8 p-0"
+        onMouseDown={preventToolbarMouseDown}
         onClick={() => onApplyStyle('normal')}
         title="Normal Paragraph"
       >
@@ -223,6 +236,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
         variant={formatState.heading === 'h1' ? 'secondary' : 'ghost'}
         size="sm"
         className={`h-8 w-8 p-0 text-xs font-bold ${formatState.heading === 'h1' ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : ''}`}
+        onMouseDown={preventToolbarMouseDown}
         onClick={() => onApplyStyle('heading', '1')}
         title="Heading 1"
       >
@@ -232,6 +246,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
         variant={formatState.heading === 'h2' ? 'secondary' : 'ghost'}
         size="sm"
         className={`h-8 w-8 p-0 text-xs font-bold ${formatState.heading === 'h2' ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : ''}`}
+        onMouseDown={preventToolbarMouseDown}
         onClick={() => onApplyStyle('heading', '2')}
         title="Heading 2"
       >
@@ -241,6 +256,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
         variant={formatState.heading === 'h3' ? 'secondary' : 'ghost'}
         size="sm"
         className={`h-8 w-8 p-0 text-xs font-bold ${formatState.heading === 'h3' ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : ''}`}
+        onMouseDown={preventToolbarMouseDown}
         onClick={() => onApplyStyle('heading', '3')}
         title="Heading 3"
       >
@@ -253,6 +269,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
         variant={formatState.bulletList ? 'secondary' : 'ghost'}
         size="sm"
         className={`h-8 w-8 p-0 ${formatState.bulletList ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : ''}`}
+        onMouseDown={preventToolbarMouseDown}
         onClick={() => onApplyStyle('list', 'bullet')}
         title="Bullet List"
       >
@@ -262,31 +279,44 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
         variant={formatState.orderedList ? 'secondary' : 'ghost'}
         size="sm"
         className={`h-8 w-8 p-0 ${formatState.orderedList ? 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground' : ''}`}
+        onMouseDown={preventToolbarMouseDown}
         onClick={() => onApplyStyle('list', 'ordered')}
         title="Ordered List"
       >
         <ListOrdered className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onApplyStyle('quote')} title="Quote">
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('quote')} title="Quote">
         <Quote className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onApplyStyle('link')} title="Link">
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('link')} title="Link">
         <Link2 className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onApplyStyle('hr')} title="Horizontal Rule">
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('hr')} title="Horizontal Rule">
         <Minus className="h-4 w-4" />
       </Button>
 
       <div className="mx-1 h-5 w-px bg-border" />
 
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onApplyStyle('table')} title="Insert Table">
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('table')} title="Insert Table">
         <Table className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onApplyStyle('codeBlock')} title="Insert Code Block">
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('codeBlock')} title="Insert Code Block">
         <Braces className="h-4 w-4" />
       </Button>
-      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => onApplyStyle('formula')} title="Insert Formula">
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('formula')} title="Insert Formula">
         <Sigma className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-[10px]" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('tableAddRow')} title="Add Table Row">
+        <Rows3 className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-[10px]" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('tableRemoveRow')} title="Remove Table Row">
+        R-
+      </Button>
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-[10px]" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('tableAddColumn')} title="Add Table Column">
+        <Columns3 className="h-4 w-4" />
+      </Button>
+      <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-[10px]" onMouseDown={preventToolbarMouseDown} onClick={() => onApplyStyle('tableRemoveColumn')} title="Remove Table Column">
+        C-
       </Button>
     </div>
   )
