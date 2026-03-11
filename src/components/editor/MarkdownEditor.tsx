@@ -874,6 +874,35 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     scrollCaretIntoView()
   }, [restoreSavedSelection, scrollCaretIntoView])
 
+  const insertCodeBlockAtCaret = useCallback(() => {
+    const selection = restoreSavedSelection()
+    if (!selection || !selection.rangeCount) return
+    const range = selection.getRangeAt(0)
+    const codeText = document.createTextNode('')
+    const pre = document.createElement('pre')
+    pre.className = 'editor-code-block'
+    const code = document.createElement('code')
+    code.appendChild(codeText)
+    pre.appendChild(code)
+
+    const paragraph = document.createElement('p')
+    paragraph.appendChild(document.createElement('br'))
+
+    if (!selection.isCollapsed) {
+      range.deleteContents()
+    }
+    range.insertNode(paragraph)
+    range.insertNode(pre)
+
+    const caret = document.createRange()
+    caret.setStart(codeText, 0)
+    caret.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedRangeRef.current = caret.cloneRange()
+    handleInput()
+  }, [handleInput, restoreSavedSelection])
+
   const isSelectionInsideCodeBlock = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount || !editorRef.current) return false
@@ -900,9 +929,15 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     el.dataset.latex = normalized
     el.classList.add('formula-inline')
     if (!normalized) {
-      el.innerHTML = '<span class="formula-inline-placeholder">公式</span>'
+      el.dataset.empty = 'true'
+      try {
+        katex.render('\\square', el, { throwOnError: false, displayMode: false })
+      } catch {
+        el.innerHTML = '<span class="formula-inline-placeholder">fx</span>'
+      }
       return
     }
+    delete el.dataset.empty
     try {
       katex.render(normalized, el, { throwOnError: false, displayMode: false })
     } catch {
@@ -914,7 +949,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const editor = editorRef.current
     if (!editor) return
 
-    const handleFormulaDoubleClick = (event: MouseEvent) => {
+    const handleFormulaClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null
       const formula = target?.closest('.formula-inline') as HTMLElement | null
       if (!formula || !editor.contains(formula)) return
@@ -926,8 +961,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       handleInput()
     }
 
-    editor.addEventListener('dblclick', handleFormulaDoubleClick)
-    return () => editor.removeEventListener('dblclick', handleFormulaDoubleClick)
+    editor.addEventListener('click', handleFormulaClick)
+    return () => editor.removeEventListener('click', handleFormulaClick)
   }, [handleInput, renderFormulaElement])
 
   const applyFontSize = useCallback((size: number) => {
@@ -1071,7 +1106,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         break
       case 'codeBlock':
-        insertHtmlAtCaret('<pre class="editor-code-block"><code><br></code></pre><p><br></p>')
+        insertCodeBlockAtCaret()
         break
       case 'formula':
         {
@@ -1152,13 +1187,14 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     // Trigger content update
     handleInput()
-  }, [applyFontSize, clearInlineTypingState, ensureCaretOutsideInlineFormatting, getCurrentTableCell, getFontSizeFromNode, handleInput, insertHtmlAtCaret, renderFormulaElement, restoreSavedSelection, wrapSelectionWithStyle])
+  }, [applyFontSize, clearInlineTypingState, ensureCaretOutsideInlineFormatting, getCurrentTableCell, getFontSizeFromNode, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, renderFormulaElement, restoreSavedSelection, wrapSelectionWithStyle])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && isSelectionInsideCodeBlock()) {
-      // Keep native Enter behavior in code blocks so text after caret
-      // moves to the next line correctly.
+      e.preventDefault()
+      document.execCommand('insertText', false, '\n')
+      handleInput()
       return
     }
 
@@ -1465,6 +1501,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           color: var(--pmd-formula-fg);
           background: var(--pmd-formula-bg);
           cursor: pointer;
+        }
+
+        .prose-editor .formula-inline[data-empty='true'] {
+          opacity: 0.8;
+          border-style: dashed;
         }
 
         .prose-editor .formula-inline .katex {

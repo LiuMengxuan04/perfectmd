@@ -366,7 +366,7 @@ export function Sidebar({ onExport }: SidebarProps) {
                   title={heading.text}
                 >
                   <span className="mr-2 shrink-0 text-[10px] text-muted-foreground">
-                    H{heading.level}
+                    {heading.level === 1 ? '•' : heading.level === 2 ? '◦' : '▪'}
                   </span>
                   <span className="truncate">{heading.text}</span>
                 </button>
