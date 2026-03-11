@@ -73,7 +73,7 @@ export default function Home() {
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar onExport={handleExport} />
-        <main className="flex-1 overflow-auto bg-background">
+        <main className="flex-1 overflow-hidden bg-background">
           {currentDocument ? (
             <MarkdownEditor
               content={currentDocument.content}

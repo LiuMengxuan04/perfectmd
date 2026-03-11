@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { FloatingToolbar } from './FloatingToolbar'
+import { TopToolbar } from './TopToolbar'
 
 interface MarkdownEditorProps {
   content: string
@@ -18,6 +18,16 @@ interface FormatState {
   orderedList: boolean
 }
 
+const DEFAULT_FORMAT_STATE: FormatState = {
+  heading: null,
+  bold: false,
+  italic: false,
+  underline: false,
+  strikethrough: false,
+  bulletList: false,
+  orderedList: false,
+}
+
 // Font size steps for increase/decrease
 const FONT_SIZE_STEP = 4
 const MIN_FONT_SIZE = 10
@@ -26,19 +36,7 @@ const DEFAULT_FONT_SIZE = 16
 
 export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
-  const [toolbarState, setToolbarState] = useState({
-    visible: false,
-    position: { top: 0, left: 0 },
-  })
-  const [formatState, setFormatState] = useState<FormatState>({ 
-    heading: null,
-    bold: false,
-    italic: false,
-    underline: false,
-    strikethrough: false,
-    bulletList: false,
-    orderedList: false,
-  })
+  const [formatState, setFormatState] = useState<FormatState>(DEFAULT_FORMAT_STATE)
   const isInternalChange = useRef(false)
   const shouldResetInlineTypingRef = useRef(false)
 
@@ -50,6 +48,18 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       onChange(newContent)
     }
   }, [onChange])
+
+  const scrollCaretIntoView = useCallback(() => {
+    requestAnimationFrame(() => {
+      const selection = window.getSelection()
+      if (!selection || !selection.rangeCount) return
+      const anchorNode = selection.anchorNode
+      const element = anchorNode?.nodeType === Node.TEXT_NODE
+        ? anchorNode.parentElement
+        : anchorNode as HTMLElement | null
+      element?.scrollIntoView({ block: 'nearest' })
+    })
+  }, [])
 
   const getTextBeforeCaretInBlock = useCallback((block: HTMLElement, selection: Selection): string => {
     if (!selection.rangeCount) return ''
@@ -708,34 +718,20 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return state
   }, [])
 
-  // Handle text selection - show/hide toolbar
+  // Keep toolbar active state in sync with current selection/caret.
   const handleSelectionChange = useCallback(() => {
     const selection = window.getSelection()
-    
-    // Hide toolbar if no selection or collapsed selection
-    if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-      setToolbarState((prev) => ({ ...prev, visible: false }))
+    if (!selection || !selection.rangeCount || !editorRef.current) {
+      setFormatState(DEFAULT_FORMAT_STATE)
       return
     }
 
     const range = selection.getRangeAt(0)
-    const rect = range.getBoundingClientRect()
-
-    // Check if selection is within editor
-    if (editorRef.current && editorRef.current.contains(range.commonAncestorContainer)) {
-      // Detect current format
+    if (editorRef.current.contains(range.commonAncestorContainer)) {
       const detectedFormat = detectFormatState(range.commonAncestorContainer)
       setFormatState(detectedFormat)
-      
-      setToolbarState({
-        visible: true,
-        position: {
-          top: rect.top - 50 + window.scrollY,
-          left: rect.left + rect.width / 2,
-        },
-      })
     } else {
-      setToolbarState((prev) => ({ ...prev, visible: false }))
+      setFormatState(DEFAULT_FORMAT_STATE)
     }
   }, [detectFormatState])
 
@@ -743,6 +739,28 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     document.addEventListener('selectionchange', handleSelectionChange)
     return () => document.removeEventListener('selectionchange', handleSelectionChange)
   }, [handleSelectionChange])
+
+  const scrollToHeadingIndex = useCallback((index: number) => {
+    if (!editorRef.current || index < 0) return
+    const headings = editorRef.current.querySelectorAll('h1, h2, h3')
+    const target = headings[index] as HTMLElement | undefined
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  useEffect(() => {
+    const handleScrollToHeading = (event: Event) => {
+      const customEvent = event as CustomEvent<{ index?: number }>
+      const index = customEvent.detail?.index
+      if (typeof index === 'number') {
+        scrollToHeadingIndex(index)
+      }
+    }
+    window.addEventListener('editor-scroll-to-heading', handleScrollToHeading)
+    return () => {
+      window.removeEventListener('editor-scroll-to-heading', handleScrollToHeading)
+    }
+  }, [scrollToHeadingIndex])
 
   // Get current font size from a node (handles both Element and Text nodes)
   const getFontSizeFromNode = useCallback((node: Node | null): number => {
@@ -766,8 +784,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return DEFAULT_FONT_SIZE
   }, [])
 
-  // Helper to select an element and show toolbar
-  const selectElementAndShowToolbar = useCallback((element: HTMLElement) => {
+  // Helper to select an element and place current selection on it.
+  const selectElement = useCallback((element: HTMLElement) => {
     const selection = window.getSelection()
     if (!selection) return
     
@@ -775,18 +793,6 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     range.selectNodeContents(element)
     selection.removeAllRanges()
     selection.addRange(range)
-    
-    // Update toolbar position after a brief delay to let DOM update
-    requestAnimationFrame(() => {
-      const rect = element.getBoundingClientRect()
-      setToolbarState({
-        visible: true,
-        position: {
-          top: rect.top - 50 + window.scrollY,
-          left: rect.left + rect.width / 2,
-        },
-      })
-    })
   }, [])
 
   const wrapSelectionWithStyle = useCallback(
@@ -818,6 +824,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     },
     []
   )
+
+  const insertHtmlAtCaret = useCallback((html: string) => {
+    document.execCommand('insertHTML', false, html)
+    scrollCaretIntoView()
+  }, [scrollCaretIntoView])
 
   // Apply style to selected text
   const applyStyle = useCallback((style: string, value?: string) => {
@@ -869,7 +880,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         fontSpan.textContent = selectedText
         range.deleteContents()
         range.insertNode(fontSpan)
-        selectElementAndShowToolbar(fontSpan)
+        selectElement(fontSpan)
         handleInput()
         return
       }
@@ -882,7 +893,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         fontSpan.textContent = selectedText
         range.deleteContents()
         range.insertNode(fontSpan)
-        selectElementAndShowToolbar(fontSpan)
+        selectElement(fontSpan)
         handleInput()
         return
       }
@@ -895,7 +906,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         fontSpan.textContent = selectedText
         range.deleteContents()
         range.insertNode(fontSpan)
-        selectElementAndShowToolbar(fontSpan)
+        selectElement(fontSpan)
         handleInput()
         return
       }
@@ -939,12 +950,22 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         document.execCommand('formatBlock', false, '<p>')
         setFormatState((prev) => ({ ...prev, heading: null }))
         break
+      case 'table':
+        insertHtmlAtCaret(
+          '<table><thead><tr><th>Header 1</th><th>Header 2</th></tr></thead><tbody><tr><td>Cell 1</td><td>Cell 2</td></tr></tbody></table><p><br></p>'
+        )
+        break
+      case 'codeBlock':
+        insertHtmlAtCaret('<pre><code>// code</code></pre><p><br></p>')
+        break
+      case 'formula':
+        insertHtmlAtCaret('<div class="formula-block">$$ E = mc^2 $$</div><p><br></p>')
+        break
     }
 
     // Trigger content update
     handleInput()
-    setToolbarState((prev) => ({ ...prev, visible: false }))
-  }, [clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, getFontSizeFromNode, selectElementAndShowToolbar, wrapSelectionWithStyle])
+  }, [clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, getFontSizeFromNode, insertHtmlAtCaret, selectElement, wrapSelectionWithStyle])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -963,6 +984,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         shouldResetInlineTypingRef.current = false
         handleInput()
+        scrollCaretIntoView()
         return
       }
     }
@@ -977,6 +999,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       document.execCommand('insertParagraph', false)
       shouldResetInlineTypingRef.current = false
       handleInput()
+      scrollCaretIntoView()
       return
     }
 
@@ -997,6 +1020,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         shouldResetInlineTypingRef.current = false
         handleInput()
+        scrollCaretIntoView()
         return
       } else if (
         e.key.length === 1 &&
@@ -1048,21 +1072,19 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, scrollCaretIntoView])
 
   return (
-    <div className="relative h-full">
-      <FloatingToolbar
+    <div className="flex h-full flex-col overflow-hidden">
+      <TopToolbar
         onApplyStyle={applyStyle}
-        position={toolbarState.position}
-        visible={toolbarState.visible}
         formatState={formatState}
       />
-      
+
       <div
         ref={editorRef}
         contentEditable
-        className="prose-editor h-full min-h-[calc(100vh-200px)] p-8 outline-none focus:outline-none overflow-auto"
+        className="prose-editor flex-1 overflow-y-auto p-8 outline-none focus:outline-none"
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         suppressContentEditableWarning
@@ -1224,6 +1246,16 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         .prose-editor th {
           background-color: var(--muted);
           font-weight: 600;
+        }
+
+        .prose-editor .formula-block {
+          margin: 1em 0;
+          border-radius: 6px;
+          border: 1px dashed var(--border);
+          background: var(--muted);
+          padding: 0.75em 1em;
+          font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+          white-space: pre-wrap;
         }
         
         .prose-editor strong,
