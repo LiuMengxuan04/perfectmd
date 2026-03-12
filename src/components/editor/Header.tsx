@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { FileText, Save, Palette } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
+import { open as openExternal } from '@tauri-apps/plugin-shell'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +25,23 @@ import {
 
 const CUSTOM_THEME_KEY = 'perfectmd-custom-theme-css'
 const CUSTOM_THEME_STYLE_ID = 'perfectmd-custom-theme-style'
-const APP_VERSION = 'v1.8.9'
+const FALLBACK_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
+const RELEASE_API_URL = 'https://api.github.com/repos/ssbsunshengbo/perfectmd/releases/latest'
+
+const normalizeVersion = (input: string) => input.replace(/^v/i, '').trim()
+
+const isRemoteVersionNewer = (remote: string, local: string) => {
+  const a = normalizeVersion(remote).split('.').map((n) => Number(n) || 0)
+  const b = normalizeVersion(local).split('.').map((n) => Number(n) || 0)
+  const maxLength = Math.max(a.length, b.length)
+  for (let i = 0; i < maxLength; i += 1) {
+    const av = a[i] || 0
+    const bv = b[i] || 0
+    if (av > bv) return true
+    if (av < bv) return false
+  }
+  return false
+}
 const AURORA_TEMPLATE_CSS = `:root {
   --background: #0a0616;
   --foreground: #f5f3ff;
@@ -86,6 +103,7 @@ export function Header() {
   const { currentDocument, updateCurrentTitle, saveDocument } = useEditorStore()
   const [isSaving, setIsSaving] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [appVersion, setAppVersion] = useState(`v${normalizeVersion(FALLBACK_VERSION)}`)
   const [customCssDraft, setCustomCssDraft] = useState(() =>
     typeof window !== 'undefined' ? localStorage.getItem(CUSTOM_THEME_KEY) || '' : ''
   )
@@ -120,6 +138,58 @@ export function Header() {
   useEffect(() => {
     applyCustomThemeCss(customCssDraft)
   }, [applyCustomThemeCss, customCssDraft])
+
+  const openExternalUrl = useCallback(async (url: string) => {
+    try {
+      await openExternal(url)
+      return
+    } catch {
+      // Fallback for non-Tauri environments.
+    }
+    window.open(url, '_blank')
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    import('@tauri-apps/api/app')
+      .then(({ getVersion }) => getVersion())
+      .then((version) => {
+        if (!active) return
+        setAppVersion(`v${normalizeVersion(version)}`)
+      })
+      .catch(() => {
+        // Keep fallback version on web environment.
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!mounted || !appVersion) return
+    let cancelled = false
+    fetch(RELEASE_API_URL)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.tag_name || !data?.html_url) return
+        if (!isRemoteVersionNewer(String(data.tag_name), appVersion)) return
+        toast.info(`发现新版本 ${data.tag_name}`, {
+          action: {
+            label: '下载更新',
+            onClick: () => {
+              openExternalUrl(String(data.html_url))
+            },
+          },
+          duration: 12000,
+        })
+      })
+      .catch(() => {
+        // Ignore network errors.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [appVersion, mounted, openExternalUrl])
 
   const handleSaveDocument = useCallback(async () => {
     if (!currentDocument) return
@@ -185,7 +255,7 @@ export function Header() {
         <FileText className="h-6 w-6 text-primary" />
         <h1 className="text-lg font-semibold">Markdown Editor</h1>
         <span className="rounded border px-2 py-0.5 text-[11px] text-muted-foreground">
-          {APP_VERSION}
+          {appVersion}
         </span>
         {currentDocument && (
           <span className="text-xs text-muted-foreground">

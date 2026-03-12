@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { open as openExternal } from '@tauri-apps/plugin-shell'
 
 interface MarkdownEditorProps {
   content: string
@@ -447,7 +448,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     if (!block) return false
 
     const beforeCaret = getTextBeforeCaretInBlock(block, selection)
-    const currentLine = (beforeCaret.split('\n').pop() || '').trim()
+    const currentLine = (beforeCaret.split('\n').pop() || '').replace(/\u200b/g, '').trim()
 
     if (e.key === ' ') {
       const tagMap: Record<string, string> = {
@@ -1160,86 +1161,115 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return true
   }, [getCurrentBlock])
 
-  const exitEmptyListItemWithLineBreak = useCallback((): boolean => {
+  const getCurrentListItem = useCallback((): HTMLLIElement | null => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editorRef.current) return null
+    const range = selection.getRangeAt(0)
+    const nodesToCheck: Array<Node | null> = [
+      selection.anchorNode,
+      selection.focusNode,
+      range.commonAncestorContainer,
+    ]
+    for (const node of nodesToCheck) {
+      const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node as HTMLElement | null
+      if (!element) continue
+      const li = element.closest('li') as HTMLLIElement | null
+      if (li && editorRef.current.contains(li)) return li
+    }
+    return null
+  }, [])
+
+  const isCaretInsideList = useCallback((): boolean => {
+    return !!getCurrentListItem()
+  }, [getCurrentListItem])
+
+  const handleListEnter = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount || !editorRef.current) return false
-    const anchor = selection.anchorNode
-    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
-    if (!element) return false
-    const li = element.closest('li')
-    if (!li || !editorRef.current.contains(li)) return false
+    const li = getCurrentListItem()
+    if (!li) return false
+    const list = li.parentElement as HTMLOListElement | HTMLUListElement | null
+    if (!list || (list.tagName !== 'UL' && list.tagName !== 'OL')) return false
 
-    const onlyBr = li.childNodes.length === 1 && li.firstChild?.nodeName === 'BR'
-    const isEmpty = onlyBr || (li.textContent || '').replace(/\u200b/g, '').trim() === ''
-    if (!isEmpty) return false
+    const liText = (li.textContent || '').replace(/\u200b/g, '').trim()
+    const isEmpty = liText.length === 0
+    if (isEmpty) {
+      const previous = list.previousSibling
+      const next = list.nextSibling
+      list.removeChild(li)
+      if (list.children.length === 0) {
+        list.remove()
+      }
 
-    const list = li.parentElement
-    if (!list) return false
-    const parent = list.parentNode
-    if (!parent) return false
-
-    const range = document.createRange()
-    range.setStartAfter(list)
-    range.collapse(true)
-    selection.removeAllRanges()
-    selection.addRange(range)
-
-    li.remove()
-    if (list.children.length === 0) {
-      list.remove()
+      const caret = document.createRange()
+      if (previous && previous.nodeType === Node.ELEMENT_NODE) {
+        caret.selectNodeContents(previous)
+        caret.collapse(false)
+      } else if (next && next.nodeType === Node.ELEMENT_NODE) {
+        caret.selectNodeContents(next)
+        caret.collapse(true)
+      } else if (editorRef.current.lastChild && editorRef.current.lastChild.nodeType === Node.ELEMENT_NODE) {
+        caret.selectNodeContents(editorRef.current.lastChild)
+        caret.collapse(false)
+      } else {
+        const p = document.createElement('p')
+        p.appendChild(document.createElement('br'))
+        editorRef.current.appendChild(p)
+        caret.selectNodeContents(p)
+        caret.collapse(true)
+      }
+      selection.removeAllRanges()
+      selection.addRange(caret)
+      savedRangeRef.current = caret.cloneRange()
+      return true
     }
 
-    const br = document.createElement('br')
-    range.insertNode(br)
-    const spacer = document.createTextNode('\u200b')
-    br.parentNode?.insertBefore(spacer, br.nextSibling)
+    const newLi = document.createElement('li')
+    newLi.appendChild(document.createElement('br'))
+    li.parentNode?.insertBefore(newLi, li.nextSibling)
     const caret = document.createRange()
-    caret.setStart(spacer, 0)
+    caret.selectNodeContents(newLi)
     caret.collapse(true)
     selection.removeAllRanges()
     selection.addRange(caret)
     savedRangeRef.current = caret.cloneRange()
     return true
-  }, [])
-
-  const isCaretInsideList = useCallback((): boolean => {
-    const selection = window.getSelection()
-    if (!selection || !selection.rangeCount || !editorRef.current) return false
-    const anchor = selection.anchorNode
-    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
-    if (!element) return false
-    const li = element.closest('li')
-    return !!(li && editorRef.current.contains(li))
-  }, [])
+  }, [getCurrentListItem])
 
   const removeSingleEmptyListAtCaret = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount || !editorRef.current) return false
-    const anchor = selection.anchorNode
-    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
-    if (!element) return false
-
-    const li = element.closest('li') as HTMLLIElement | null
-    if (!li || !editorRef.current.contains(li)) return false
+    const li = getCurrentListItem()
+    if (!li) return false
     const list = li.parentElement as HTMLOListElement | HTMLUListElement | null
     if (!list || (list.tagName !== 'UL' && list.tagName !== 'OL')) return false
     if (list.children.length !== 1 || list.firstElementChild !== li) return false
     const liText = (li.textContent || '').replace(/\u200b/g, '').trim()
     if (liText.length > 0) return false
 
-    const p = document.createElement('p')
-    p.appendChild(document.createElement('br'))
-    list.parentNode?.insertBefore(p, list.nextSibling)
+    const previous = list.previousSibling
+    const next = list.nextSibling
     list.remove()
 
     const caret = document.createRange()
-    caret.selectNodeContents(p)
-    caret.collapse(true)
+    if (previous && previous.nodeType === Node.ELEMENT_NODE) {
+      caret.selectNodeContents(previous)
+      caret.collapse(false)
+    } else if (next && next.nodeType === Node.ELEMENT_NODE) {
+      caret.selectNodeContents(next)
+      caret.collapse(true)
+    } else {
+      const p = document.createElement('p')
+      p.appendChild(document.createElement('br'))
+      editorRef.current.appendChild(p)
+      caret.selectNodeContents(p)
+      caret.collapse(true)
+    }
     selection.removeAllRanges()
     selection.addRange(caret)
     savedRangeRef.current = caret.cloneRange()
     return true
-  }, [])
+  }, [getCurrentListItem])
 
   const getCurrentTableCell = useCallback((): HTMLTableCellElement | null => {
     const selection = window.getSelection()
@@ -1369,6 +1399,30 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     setSelectedImage(null)
     setImageOverlayRect(null)
   }, [recalcSelectedImageOverlay])
+
+  const openExternalUrl = useCallback(async (href: string) => {
+    const url = href.trim()
+    if (!url) return
+    try {
+      await openExternal(url)
+      return
+    } catch {
+      // Fallback for non-Tauri environment.
+    }
+    try {
+      const newWindow = window.open(url, '_blank')
+      if (newWindow) return
+    } catch {
+      // continue fallback
+    }
+    const a = document.createElement('a')
+    a.href = url
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }, [])
 
   const openFormulaDialog = useCallback((initialLatex: string, targetEl: HTMLElement | null) => {
     formulaTargetRef.current = targetEl
@@ -1745,17 +1799,17 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       return
     }
 
-    if (e.key === 'Enter' && !e.shiftKey && exitEmptyListItemWithLineBreak()) {
-      e.preventDefault()
-      handleInput()
-      scrollCaretIntoView()
-      return
-    }
-
     if (e.key === 'Enter' && isSelectionInsideCodeBlock()) {
       e.preventDefault()
       insertNewLineInCodeBlock()
       handleInput()
+      return
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey && handleListEnter()) {
+      e.preventDefault()
+      handleInput()
+      scrollCaretIntoView()
       return
     }
 
@@ -1855,7 +1909,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, exitEmptyListItemWithLineBreak, handleInput, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isCaretInsideList, isSelectionInsideCodeBlock, removeSingleEmptyListAtCaret, scrollCaretIntoView, selectedImage])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, handleInput, handleListEnter, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isCaretInsideList, isSelectionInsideCodeBlock, removeSingleEmptyListAtCaret, scrollCaretIntoView, selectedImage])
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
@@ -1951,10 +2005,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
+                onClick={async () => {
                   if (!editingLink) return
                   const href = editingLink.href.trim()
-                  if (href) window.open(href, '_blank', 'noopener,noreferrer')
+                  if (href) await openExternalUrl(href)
                 }}
               >
                 打开
