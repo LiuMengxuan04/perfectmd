@@ -25,6 +25,62 @@ import {
 
 const CUSTOM_THEME_KEY = 'perfectmd-custom-theme-css'
 const CUSTOM_THEME_STYLE_ID = 'perfectmd-custom-theme-style'
+const AURORA_TEMPLATE_CSS = `:root {
+  --background: #0a0616;
+  --foreground: #f5f3ff;
+  --card: rgba(20, 16, 34, 0.72);
+  --card-foreground: #f8f7ff;
+  --border: rgba(196, 181, 253, 0.28);
+  --muted: rgba(139, 92, 246, 0.12);
+  --muted-foreground: #c4b5fd;
+  --accent: rgba(244, 114, 182, 0.16);
+  --accent-foreground: #ffd6ef;
+  --primary: #a78bfa;
+  --primary-foreground: #140f24;
+
+  --pmd-link-color: #7dd3fc;
+  --pmd-code-bg: rgba(5, 10, 26, 0.9);
+  --pmd-code-fg: #dbeafe;
+  --pmd-code-border: rgba(125, 211, 252, 0.35);
+  --pmd-table-border: rgba(196, 181, 253, 0.4);
+  --pmd-table-header-bg: rgba(167, 139, 250, 0.22);
+  --pmd-table-cell-bg: rgba(255, 255, 255, 0.02);
+  --pmd-formula-bg: rgba(34, 211, 238, 0.1);
+  --pmd-formula-fg: #cffafe;
+  --pmd-formula-border: rgba(34, 211, 238, 0.45);
+}
+
+body {
+  background:
+    radial-gradient(1200px 700px at 15% -10%, rgba(217, 70, 239, 0.28), transparent 55%),
+    radial-gradient(1200px 700px at 90% 0%, rgba(56, 189, 248, 0.2), transparent 50%),
+    linear-gradient(180deg, #090412 0%, #0e1327 55%, #100a1c 100%);
+}
+
+.prose-editor p {
+  border: 1px solid rgba(196, 181, 253, 0.16);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  margin: 0.55rem 0;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.prose-editor h1, .prose-editor h2, .prose-editor h3 {
+  position: relative;
+  padding-left: 0.8rem;
+  border-left: 3px solid rgba(244, 114, 182, 0.65);
+}
+
+.prose-editor h1 {
+  background: linear-gradient(90deg, #f9a8d4, #c4b5fd 45%, #7dd3fc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.prose-editor .formula-inline {
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.35), 0 0 10px rgba(34, 211, 238, 0.22);
+}
+`
 
 export function Header() {
   const { currentDocument, updateCurrentTitle, saveDocument } = useEditorStore()
@@ -35,6 +91,8 @@ export function Header() {
     typeof window !== 'undefined' ? localStorage.getItem(CUSTOM_THEME_KEY) || '' : ''
   )
   const [isThemeDialogOpen, setIsThemeDialogOpen] = useState(false)
+  const selectedTemplate: 'none' | 'aurora' =
+    customCssDraft.trim() === AURORA_TEMPLATE_CSS.trim() ? 'aurora' : 'none'
 
   const applyCustomThemeCss = useCallback((cssText: string) => {
     let styleEl = document.getElementById(CUSTOM_THEME_STYLE_ID) as HTMLStyleElement | null
@@ -104,6 +162,22 @@ export function Header() {
     setCustomCssDraft('')
     applyCustomThemeCss('')
     toast.success('Custom theme CSS reset')
+  }
+
+  const handleApplyTemplate = (template: 'none' | 'aurora') => {
+    if (template === 'none') {
+      setCustomCssDraft('')
+      localStorage.removeItem(CUSTOM_THEME_KEY)
+      applyCustomThemeCss('')
+      toast.success('Template cleared')
+      return
+    }
+    if (template === 'aurora') {
+      setCustomCssDraft(AURORA_TEMPLATE_CSS)
+      localStorage.setItem(CUSTOM_THEME_KEY, AURORA_TEMPLATE_CSS)
+      applyCustomThemeCss(AURORA_TEMPLATE_CSS)
+      toast.success('Aurora template applied')
+    }
   }
 
   return (
@@ -186,11 +260,39 @@ export function Header() {
       <Dialog open={isThemeDialogOpen} onOpenChange={setIsThemeDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Custom Theme CSS</DialogTitle>
+            <DialogTitle>Theme Templates & Custom CSS</DialogTitle>
             <DialogDescription>
-              Paste your custom CSS to style editor components. It will be applied instantly after saving.
+              Choose a template or paste your custom CSS. Save to persist theme.
             </DialogDescription>
           </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => handleApplyTemplate('aurora')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'aurora' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+            >
+              <div
+                className="h-20 w-full rounded-md border"
+                style={{
+                  background:
+                    'radial-gradient(circle at 20% 10%, rgba(217,70,239,0.6), transparent 45%), radial-gradient(circle at 85% 15%, rgba(56,189,248,0.45), transparent 45%), linear-gradient(180deg, #0a0616 0%, #0e1327 50%, #100a1c 100%)',
+                }}
+              />
+              <div className="mt-2 text-sm font-medium">Aurora Elegant</div>
+              <div className="text-xs text-muted-foreground">High contrast + glow style</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyTemplate('none')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'none' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+            >
+              <div
+                className="h-20 w-full rounded-md border bg-background"
+              />
+              <div className="mt-2 text-sm font-medium">Default</div>
+              <div className="text-xs text-muted-foreground">Use built-in app theme only</div>
+            </button>
+          </div>
           <Textarea
             value={customCssDraft}
             onChange={(e) => setCustomCssDraft(e.target.value)}
