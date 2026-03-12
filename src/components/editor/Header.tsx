@@ -4,8 +4,7 @@ import { useEditorStore } from '@/store/editor-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Moon, Sun, FileText, Save, Palette } from 'lucide-react'
-import { useTheme } from 'next-themes'
+import { FileText, Save, Palette } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import {
@@ -84,7 +83,6 @@ body {
 
 export function Header() {
   const { currentDocument, updateCurrentTitle, saveDocument } = useEditorStore()
-  const { theme, setTheme } = useTheme()
   const [isSaving, setIsSaving] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [customCssDraft, setCustomCssDraft] = useState(() =>
@@ -216,44 +214,19 @@ export function Header() {
         )}
         
         {mounted && (
-          <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="gap-1">
-                  <Palette className="h-4 w-4" />
-                  Theme
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setTheme('light')}>
-                  <Sun className="mr-2 h-4 w-4" />
-                  Light
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('dark')}>
-                  <Moon className="mr-2 h-4 w-4" />
-                  Dark
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setTheme('system')}>
-                  System
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsThemeDialogOpen(true)}>
-                  Custom CSS Theme
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              title="Quick light/dark toggle"
-            >
-              {theme === 'dark' ? (
-                <Sun className="h-5 w-5" />
-              ) : (
-                <Moon className="h-5 w-5" />
-              )}
-            </Button>
-          </>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1">
+                <Palette className="h-4 w-4" />
+                Theme
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setIsThemeDialogOpen(true)}>
+                模板与自定义 CSS
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 

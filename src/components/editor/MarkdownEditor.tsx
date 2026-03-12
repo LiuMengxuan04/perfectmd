@@ -50,12 +50,58 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
   const savedRangeRef = useRef<Range | null>(null)
   const formulaTargetRef = useRef<HTMLElement | null>(null)
+  const resizeDragRef = useRef<{
+    startX: number
+    startWidth: number
+    startHeight: number
+    ratio: number
+    corner: 'se' | 'sw' | 'ne' | 'nw'
+  } | null>(null)
   const [formatState, setFormatState] = useState<FormatState>(DEFAULT_FORMAT_STATE)
   const [isFormulaDialogOpen, setIsFormulaDialogOpen] = useState(false)
   const [formulaDraft, setFormulaDraft] = useState('')
+  const [editingLink, setEditingLink] = useState<{
+    element: HTMLAnchorElement
+    text: string
+    href: string
+    position: { top: number; left: number }
+  } | null>(null)
+  const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null)
+  const [imageOverlayRect, setImageOverlayRect] = useState<{
+    top: number
+    left: number
+    width: number
+    height: number
+  } | null>(null)
   const isInternalChange = useRef(false)
   const shouldResetInlineTypingRef = useRef(false)
   const isComposingRef = useRef(false)
+
+  const ensureCodeBlockControls = useCallback((editor: HTMLDivElement) => {
+    const wrappers = editor.querySelectorAll('.code-block-wrapper')
+    wrappers.forEach((wrapper) => {
+      let copyBtn = wrapper.querySelector('[data-copy-code-btn="true"]') as HTMLButtonElement | null
+      if (!copyBtn) {
+        copyBtn = document.createElement('button')
+        copyBtn.type = 'button'
+        copyBtn.draggable = false
+        copyBtn.className = 'code-copy-btn'
+        copyBtn.setAttribute('contenteditable', 'false')
+        copyBtn.setAttribute('data-copy-code-btn', 'true')
+        copyBtn.title = 'Copy code'
+        copyBtn.innerHTML = '⧉'
+        wrapper.appendChild(copyBtn)
+      }
+      let copyToast = wrapper.querySelector('.code-copy-toast') as HTMLSpanElement | null
+      if (!copyToast) {
+        copyToast = document.createElement('span')
+        copyToast.className = 'code-copy-toast'
+        copyToast.setAttribute('contenteditable', 'false')
+        copyToast.textContent = '复制成功'
+        wrapper.appendChild(copyToast)
+      }
+    })
+  }, [])
 
   // Handle input changes
   const handleInput = useCallback(() => {
@@ -68,42 +114,59 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       const inlineTags = new Set([
         'span', 'strong', 'b', 'em', 'i', 'u', 's', 'del', 'code', 'a',
       ])
+
+      const ensureParagraphBeforeNode = (node: Node) => {
+        const previous = node.previousSibling
+        if (
+          previous &&
+          previous.nodeType === Node.ELEMENT_NODE &&
+          (previous as HTMLElement).tagName.toLowerCase() === 'p'
+        ) {
+          return previous as HTMLParagraphElement
+        }
+        const p = document.createElement('p')
+        editor.insertBefore(p, node)
+        return p
+      }
+
       const children = Array.from(editor.childNodes)
-      children.forEach((node) => {
+      for (const node of children) {
+        if (node.parentNode !== editor) continue
+
         if (node.nodeType === Node.TEXT_NODE) {
           const text = node.textContent || ''
-          if (text.trim() || text.includes('\n')) {
-            const p = document.createElement('p')
-            p.textContent = text
-            editor.insertBefore(p, node)
+          if (text === '') {
             editor.removeChild(node)
-          } else {
-            editor.removeChild(node)
+            continue
           }
-          return
+          const p = ensureParagraphBeforeNode(node)
+          p.appendChild(node)
+          continue
         }
+
         if (node.nodeType === Node.ELEMENT_NODE) {
           const el = node as HTMLElement
           const tag = el.tagName.toLowerCase()
           if (tag === 'br') {
-            const p = document.createElement('p')
-            p.appendChild(document.createElement('br'))
-            editor.replaceChild(p, el)
-            return
+            const p = ensureParagraphBeforeNode(node)
+            p.appendChild(node)
+            continue
           }
           if (!blockTags.has(tag) && inlineTags.has(tag)) {
-            const p = document.createElement('p')
-            editor.insertBefore(p, el)
-            p.appendChild(el)
+            const p = ensureParagraphBeforeNode(node)
+            p.appendChild(node)
+            continue
           }
         }
-      })
+      }
+
+      ensureCodeBlockControls(editor)
 
       isInternalChange.current = true
       const newContent = editor.innerHTML
       onChange(newContent)
     }
-  }, [onChange])
+  }, [ensureCodeBlockControls, onChange])
 
   const scrollCaretIntoView = useCallback(() => {
     requestAnimationFrame(() => {
@@ -769,10 +832,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       // Only update if the content is different and editor is not focused
       if (document.activeElement !== editorRef.current && currentHtml !== content) {
         editorRef.current.innerHTML = content || '<p><br></p>'
+        ensureCodeBlockControls(editorRef.current)
       }
     }
     isInternalChange.current = false
-  }, [content])
+  }, [content, ensureCodeBlockControls])
 
   // Initialize editor content
   useEffect(() => {
@@ -965,7 +1029,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     if (!selection || !selection.rangeCount) return
     const range = selection.getRangeAt(0)
     const currentBlock = getCurrentBlock(selection)
-    const codeText = document.createTextNode('\n')
+    const codeText = document.createTextNode('\u200b')
     const wrapper = document.createElement('div')
     wrapper.className = 'code-block-wrapper'
     const pre = document.createElement('pre')
@@ -1095,6 +1159,48 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return true
   }, [getCurrentBlock])
 
+  const exitEmptyListItemWithLineBreak = useCallback((): boolean => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editorRef.current) return false
+    const anchor = selection.anchorNode
+    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
+    if (!element) return false
+    const li = element.closest('li')
+    if (!li || !editorRef.current.contains(li)) return false
+
+    const onlyBr = li.childNodes.length === 1 && li.firstChild?.nodeName === 'BR'
+    const isEmpty = onlyBr || (li.textContent || '').replace(/\u200b/g, '').trim() === ''
+    if (!isEmpty) return false
+
+    const list = li.parentElement
+    if (!list) return false
+    const parent = list.parentNode
+    if (!parent) return false
+
+    const range = document.createRange()
+    range.setStartAfter(list)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    li.remove()
+    if (list.children.length === 0) {
+      list.remove()
+    }
+
+    const br = document.createElement('br')
+    range.insertNode(br)
+    const spacer = document.createTextNode('\u200b')
+    br.parentNode?.insertBefore(spacer, br.nextSibling)
+    const caret = document.createRange()
+    caret.setStart(spacer, 0)
+    caret.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedRangeRef.current = caret.cloneRange()
+    return true
+  }, [])
+
   const getCurrentTableCell = useCallback((): HTMLTableCellElement | null => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount || !editorRef.current) return null
@@ -1126,6 +1232,102 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       el.textContent = normalized
     }
   }, [])
+
+  const recalcSelectedImageOverlay = useCallback((imageEl: HTMLImageElement | null = selectedImage) => {
+    if (!imageEl || !editorRef.current) {
+      setImageOverlayRect(null)
+      return
+    }
+    if (!imageEl.isConnected) {
+      setSelectedImage(null)
+      setImageOverlayRect(null)
+      return
+    }
+    const containerRect = editorRef.current.getBoundingClientRect()
+    const imageRect = imageEl.getBoundingClientRect()
+    setImageOverlayRect({
+      top: imageRect.top - containerRect.top + editorRef.current.scrollTop + editorRef.current.offsetTop,
+      left: imageRect.left - containerRect.left + editorRef.current.scrollLeft + editorRef.current.offsetLeft,
+      width: imageRect.width,
+      height: imageRect.height,
+    })
+  }, [selectedImage])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor || !selectedImage) return
+    const handleRecalc = () => recalcSelectedImageOverlay()
+    editor.addEventListener('scroll', handleRecalc)
+    window.addEventListener('resize', handleRecalc)
+    return () => {
+      editor.removeEventListener('scroll', handleRecalc)
+      window.removeEventListener('resize', handleRecalc)
+    }
+  }, [recalcSelectedImageOverlay, selectedImage])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeDragRef.current || !selectedImage) return
+      e.preventDefault()
+      const drag = resizeDragRef.current
+      const dx = e.clientX - drag.startX
+      const signX = drag.corner === 'sw' || drag.corner === 'nw' ? -1 : 1
+      const nextWidth = Math.max(60, drag.startWidth + dx * signX)
+      const nextHeight = Math.max(40, nextWidth / drag.ratio)
+      selectedImage.style.width = `${Math.round(nextWidth)}px`
+      selectedImage.style.height = `${Math.round(nextHeight)}px`
+      selectedImage.removeAttribute('width')
+      selectedImage.removeAttribute('height')
+      recalcSelectedImageOverlay()
+    }
+    const handleMouseUp = () => {
+      if (!resizeDragRef.current) return
+      resizeDragRef.current = null
+      handleInput()
+    }
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [handleInput, recalcSelectedImageOverlay, selectedImage])
+
+  const handleEditorClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement
+    if (!editorRef.current) return
+
+    const formula = target.closest('.formula-inline')
+    if (formula) return
+
+    const link = target.closest('a') as HTMLAnchorElement | null
+    if (link && editorRef.current.contains(link)) {
+      e.preventDefault()
+      const rect = link.getBoundingClientRect()
+      const popoverWidth = 320
+      const left = Math.max(8, Math.min(rect.left + rect.width / 2 - popoverWidth / 2, window.innerWidth - popoverWidth - 8))
+      const top = Math.max(8, rect.bottom + 8)
+      setEditingLink({
+        element: link,
+        text: link.textContent || '',
+        href: link.getAttribute('href') || '',
+        position: { top, left },
+      })
+      return
+    }
+
+    if (target.tagName === 'IMG') {
+      const image = target as HTMLImageElement
+      setSelectedImage(image)
+      setEditingLink(null)
+      recalcSelectedImageOverlay(image)
+      return
+    }
+
+    setEditingLink(null)
+    setSelectedImage(null)
+    setImageOverlayRect(null)
+  }, [recalcSelectedImageOverlay])
 
   const openFormulaDialog = useCallback((initialLatex: string, targetEl: HTMLElement | null) => {
     formulaTargetRef.current = targetEl
@@ -1463,12 +1665,28 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (isComposingRef.current) return
 
+    if ((e.key === 'Backspace' || e.key === 'Delete') && selectedImage) {
+      e.preventDefault()
+      selectedImage.remove()
+      setSelectedImage(null)
+      setImageOverlayRect(null)
+      handleInput()
+      return
+    }
+
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
       if (exitCurrentBlockWithNewParagraph()) {
         handleInput()
         scrollCaretIntoView()
       }
+      return
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey && exitEmptyListItemWithLineBreak()) {
+      e.preventDefault()
+      handleInput()
+      scrollCaretIntoView()
       return
     }
 
@@ -1578,10 +1796,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, handleInput, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isSelectionInsideCodeBlock, scrollCaretIntoView])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, exitEmptyListItemWithLineBreak, handleInput, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isSelectionInsideCodeBlock, scrollCaretIntoView, selectedImage])
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="relative flex h-full flex-col overflow-hidden">
       <TopToolbar
         onApplyStyle={applyStyle}
         formatState={formatState}
@@ -1590,8 +1808,9 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       <div
         ref={editorRef}
         contentEditable
-        className="prose-editor flex-1 overflow-y-auto p-8 outline-none focus:outline-none"
+        className="prose-editor relative flex-1 overflow-y-auto p-8 outline-none focus:outline-none"
         onInput={handleInput}
+        onClick={handleEditorClick}
         onKeyDown={handleKeyDown}
         onCompositionStart={() => { isComposingRef.current = true }}
         onCompositionEnd={() => {
@@ -1601,6 +1820,118 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         suppressContentEditableWarning
         data-placeholder="Start writing..."
       />
+
+      {editingLink && (
+        <div
+          className="fixed z-50 w-80 rounded-md border bg-background/95 p-3 shadow-lg backdrop-blur"
+          style={{ top: `${editingLink.position.top}px`, left: `${editingLink.position.left}px` }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="space-y-2">
+            <Input
+              value={editingLink.text}
+              onChange={(e) => setEditingLink((prev) => (prev ? { ...prev, text: e.target.value } : prev))}
+              placeholder="链接文本"
+            />
+            <Input
+              value={editingLink.href}
+              onChange={(e) => setEditingLink((prev) => (prev ? { ...prev, href: e.target.value } : prev))}
+              placeholder="https://example.com"
+            />
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (!editingLink) return
+                  const target = editingLink.element
+                  const text = editingLink.text.trim() || target.textContent || editingLink.href
+                  const href = editingLink.href.trim()
+                  if (!href) {
+                    const node = document.createTextNode(text || '')
+                    target.parentNode?.replaceChild(node, target)
+                  } else {
+                    const nextLink = document.createElement('a')
+                    nextLink.textContent = text || href
+                    nextLink.setAttribute('href', href)
+                    nextLink.setAttribute('target', '_blank')
+                    nextLink.setAttribute('rel', 'noopener noreferrer')
+                    target.parentNode?.replaceChild(nextLink, target)
+                  }
+                  setEditingLink(null)
+                  handleInput()
+                }}
+              >
+                保存
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (!editingLink) return
+                  const href = editingLink.href.trim()
+                  if (href) window.open(href, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                打开
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  if (!editingLink) return
+                  const target = editingLink.element
+                  const node = document.createTextNode(editingLink.text || target.textContent || '')
+                  target.parentNode?.replaceChild(node, target)
+                  setEditingLink(null)
+                  handleInput()
+                }}
+              >
+                取消链接
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedImage && imageOverlayRect && (
+        <div
+          className="pointer-events-none absolute z-40 border-2 border-primary/70"
+          style={{
+            top: `${imageOverlayRect.top}px`,
+            left: `${imageOverlayRect.left}px`,
+            width: `${imageOverlayRect.width}px`,
+            height: `${imageOverlayRect.height}px`,
+          }}
+        >
+          {(['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
+            <button
+              key={corner}
+              type="button"
+              className="pointer-events-auto absolute h-3 w-3 rounded-full border border-primary bg-background shadow"
+              style={{
+                top: corner.includes('n') ? '-7px' : 'calc(100% - 7px)',
+                left: corner.includes('w') ? '-7px' : 'calc(100% - 7px)',
+                cursor: corner === 'nw' || corner === 'se' ? 'nwse-resize' : 'nesw-resize',
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                if (!selectedImage) return
+                const width = selectedImage.getBoundingClientRect().width
+                const height = selectedImage.getBoundingClientRect().height
+                const ratio = width > 0 && height > 0 ? width / height : 1
+                resizeDragRef.current = {
+                  startX: e.clientX,
+                  startWidth: width || selectedImage.naturalWidth || 160,
+                  startHeight: height || selectedImage.naturalHeight || 90,
+                  ratio: ratio || 1,
+                  corner,
+                }
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       <Dialog open={isFormulaDialogOpen} onOpenChange={setIsFormulaDialogOpen}>
         <DialogContent>
@@ -1777,8 +2108,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           color: inherit;
           padding: 0;
           display: block;
+          box-sizing: border-box;
           width: 100%;
+          min-width: 100%;
           min-height: 1.6em;
+          line-height: 1.6;
           white-space: pre-wrap;
         }
         
@@ -1846,6 +2180,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           max-width: 100%;
           height: auto;
           border-radius: 6px;
+          cursor: pointer;
+          user-select: none;
         }
         
         .prose-editor table {
