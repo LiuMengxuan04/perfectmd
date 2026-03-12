@@ -533,6 +533,32 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           return el
         },
       },
+      {
+        // $inline formula$
+        regex: /\$([^$\n]+)\$$/,
+        build: (m) => {
+          const el = document.createElement('span')
+          el.contentEditable = 'false'
+          el.className = 'formula-inline'
+          const latex = (m[1] || '').trim()
+          el.dataset.latex = latex
+          if (!latex) {
+            el.dataset.empty = 'true'
+            try {
+              katex.render('x', el, { throwOnError: false, displayMode: false })
+            } catch {
+              el.textContent = 'fx'
+            }
+            return el
+          }
+          try {
+            katex.render(latex, el, { throwOnError: false, displayMode: false })
+          } catch {
+            el.textContent = latex
+          }
+          return el
+        },
+      },
     ]
 
     for (const pattern of patterns) {
@@ -891,6 +917,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const selection = restoreSavedSelection()
     if (!selection || !selection.rangeCount) return
     const range = selection.getRangeAt(0)
+    const currentBlock = getCurrentBlock(selection)
     const codeText = document.createTextNode('')
     const wrapper = document.createElement('div')
     wrapper.className = 'code-block-wrapper'
@@ -920,8 +947,17 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     if (!selection.isCollapsed) {
       range.deleteContents()
     }
-    range.insertNode(paragraph)
-    range.insertNode(wrapper)
+
+    if (currentBlock && editorRef.current && currentBlock !== editorRef.current) {
+      currentBlock.parentNode?.insertBefore(wrapper, currentBlock.nextSibling)
+      currentBlock.parentNode?.insertBefore(paragraph, wrapper.nextSibling)
+    } else if (editorRef.current) {
+      editorRef.current.appendChild(wrapper)
+      editorRef.current.appendChild(paragraph)
+    } else {
+      range.insertNode(paragraph)
+      range.insertNode(wrapper)
+    }
 
     const caret = document.createRange()
     caret.setStart(codeText, 0)
@@ -930,7 +966,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     selection.addRange(caret)
     savedRangeRef.current = caret.cloneRange()
     handleInput()
-  }, [handleInput, restoreSavedSelection])
+  }, [getCurrentBlock, handleInput, restoreSavedSelection])
 
   const isSelectionInsideCodeBlock = useCallback((): boolean => {
     const selection = window.getSelection()
@@ -948,6 +984,23 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       if (pre && editorRef.current.contains(pre)) return true
     }
     return false
+  }, [])
+
+  const insertNewLineInCodeBlock = useCallback((): boolean => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount) return false
+    const range = selection.getRangeAt(0)
+    range.deleteContents()
+    const newLineNode = document.createTextNode('\n')
+    range.insertNode(newLineNode)
+
+    const caret = document.createRange()
+    caret.setStartAfter(newLineNode)
+    caret.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedRangeRef.current = caret.cloneRange()
+    return true
   }, [])
 
   const getCurrentTableCell = useCallback((): HTMLTableCellElement | null => {
@@ -1068,6 +1121,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         const helper = document.createElement('textarea')
         helper.value = copyText
         document.body.appendChild(helper)
+        helper.focus()
         helper.select()
         document.execCommand('copy')
         document.body.removeChild(helper)
@@ -1297,7 +1351,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && isSelectionInsideCodeBlock()) {
       e.preventDefault()
-      document.execCommand('insertText', false, '\n')
+      insertNewLineInCodeBlock()
       handleInput()
       return
     }
@@ -1405,7 +1459,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isSelectionInsideCodeBlock, scrollCaretIntoView])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isSelectionInsideCodeBlock, scrollCaretIntoView])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -1561,6 +1615,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           justify-content: center;
           cursor: pointer;
           transition: all 0.15s ease;
+          user-select: none;
+          pointer-events: auto;
         }
 
         .prose-editor .code-copy-btn:hover {
