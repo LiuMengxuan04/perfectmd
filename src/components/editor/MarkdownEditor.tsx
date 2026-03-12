@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 
 interface MarkdownEditorProps {
   content: string
@@ -58,8 +59,47 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   // Handle input changes
   const handleInput = useCallback(() => {
     if (editorRef.current) {
+      const editor = editorRef.current
+      const blockTags = new Set([
+        'p', 'div', 'pre', 'blockquote', 'ul', 'ol', 'li',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table',
+      ])
+      const inlineTags = new Set([
+        'span', 'strong', 'b', 'em', 'i', 'u', 's', 'del', 'code', 'a',
+      ])
+      const children = Array.from(editor.childNodes)
+      children.forEach((node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent || ''
+          if (text.trim() || text.includes('\n')) {
+            const p = document.createElement('p')
+            p.textContent = text
+            editor.insertBefore(p, node)
+            editor.removeChild(node)
+          } else {
+            editor.removeChild(node)
+          }
+          return
+        }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement
+          const tag = el.tagName.toLowerCase()
+          if (tag === 'br') {
+            const p = document.createElement('p')
+            p.appendChild(document.createElement('br'))
+            editor.replaceChild(p, el)
+            return
+          }
+          if (!blockTags.has(tag) && inlineTags.has(tag)) {
+            const p = document.createElement('p')
+            editor.insertBefore(p, el)
+            p.appendChild(el)
+          }
+        }
+      })
+
       isInternalChange.current = true
-      const newContent = editorRef.current.innerHTML
+      const newContent = editor.innerHTML
       onChange(newContent)
     }
   }, [onChange])
@@ -695,26 +735,6 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     selection.addRange(nextRange)
   }, [])
 
-  const insertCleanParagraphAfterCurrentBlock = useCallback((): boolean => {
-    const selection = window.getSelection()
-    if (!selection || !selection.rangeCount || !editorRef.current) return false
-
-    const currentBlock = getCurrentBlock(selection)
-    const editor = editorRef.current
-    if (!currentBlock || currentBlock === editor) return false
-
-    const newP = document.createElement('p')
-    newP.appendChild(document.createElement('br'))
-    currentBlock.parentNode?.insertBefore(newP, currentBlock.nextSibling)
-
-    const range = document.createRange()
-    range.selectNodeContents(newP)
-    range.collapse(true)
-    selection.removeAllRanges()
-    selection.addRange(range)
-    return true
-  }, [getCurrentBlock])
-
   // Sync content to editor when it changes externally
   useEffect(() => {
     if (editorRef.current && !isInternalChange.current) {
@@ -918,7 +938,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     if (!selection || !selection.rangeCount) return
     const range = selection.getRangeAt(0)
     const currentBlock = getCurrentBlock(selection)
-    const codeText = document.createTextNode('')
+    const codeText = document.createTextNode('\n')
     const wrapper = document.createElement('div')
     wrapper.className = 'code-block-wrapper'
     const pre = document.createElement('pre')
@@ -996,6 +1016,24 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     const caret = document.createRange()
     caret.setStartAfter(newLineNode)
+    caret.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedRangeRef.current = caret.cloneRange()
+    return true
+  }, [])
+
+  const insertLineBreakInParagraph = useCallback((): boolean => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount) return false
+    const range = selection.getRangeAt(0)
+    range.deleteContents()
+    const br = document.createElement('br')
+    range.insertNode(br)
+    const spacer = document.createTextNode('')
+    br.parentNode?.insertBefore(spacer, br.nextSibling)
+    const caret = document.createRange()
+    caret.setStart(spacer, 0)
     caret.collapse(true)
     selection.removeAllRanges()
     selection.addRange(caret)
@@ -1102,42 +1140,62 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const editor = editorRef.current
     if (!editor) return
 
-    const handleCopyCodeClick = async (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null
-      const button = target?.closest('[data-copy-code-btn="true"]') as HTMLButtonElement | null
-      if (!button || !editor.contains(button)) return
-
-      event.preventDefault()
-      event.stopPropagation()
-
+    const doCopy = async (button: HTMLElement) => {
       const wrapper = button.closest('.code-block-wrapper')
       const code = wrapper?.querySelector('pre code')
-      const copyText = code?.textContent || ''
-      if (!copyText) return
+      const rawText = code?.textContent || ''
+      const copyText = rawText.replace(/\u200b/g, '')
+      if (!copyText.trim()) return
 
+      let copied = false
       try {
         await navigator.clipboard.writeText(copyText)
+        copied = true
       } catch {
         const helper = document.createElement('textarea')
         helper.value = copyText
+        helper.style.position = 'fixed'
+        helper.style.opacity = '0'
         document.body.appendChild(helper)
         helper.focus()
         helper.select()
-        document.execCommand('copy')
+        copied = document.execCommand('copy')
         document.body.removeChild(helper)
       }
 
-      const toast = wrapper?.querySelector('.code-copy-toast')
-      if (toast) {
-        toast.classList.add('show')
+      if (!copied) return
+      toast.success('复制成功')
+      const toastEl = wrapper?.querySelector('.code-copy-toast')
+      if (toastEl) {
+        toastEl.classList.add('show')
         window.setTimeout(() => {
-          toast.classList.remove('show')
+          toastEl.classList.remove('show')
         }, 1200)
       }
     }
 
+    const handleCopyCodeMouseDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      const button = target?.closest('[data-copy-code-btn="true"]') as HTMLElement | null
+      if (!button || !editor.contains(button)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
+    const handleCopyCodeClick = async (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      const button = target?.closest('[data-copy-code-btn="true"]') as HTMLElement | null
+      if (!button || !editor.contains(button)) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      await doCopy(button)
+    }
+
+    editor.addEventListener('mousedown', handleCopyCodeMouseDown)
     editor.addEventListener('click', handleCopyCodeClick)
     return () => {
+      editor.removeEventListener('mousedown', handleCopyCodeMouseDown)
       editor.removeEventListener('click', handleCopyCodeClick)
     }
   }, [])
@@ -1359,16 +1417,14 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     if (e.key === 'Enter' && !e.shiftKey) {
       const inBulletList = document.queryCommandState('insertUnorderedList')
       const inOrderedList = document.queryCommandState('insertOrderedList')
-      // Keep native behavior inside lists; otherwise force a clean paragraph break
-      // to avoid inheriting previous-line formatting context.
+      // Keep native behavior inside lists; in normal paragraphs we keep line
+      // breaks in the same paragraph block for a Notion-like writing flow.
       if (!inBulletList && !inOrderedList) {
         e.preventDefault()
         ensureCaretOutsideInlineFormatting()
         clearInlineTypingState()
         clearColorTypingState()
-        if (!insertCleanParagraphAfterCurrentBlock()) {
-          document.execCommand('insertParagraph', false)
-        }
+        insertLineBreakInParagraph()
         shouldResetInlineTypingRef.current = false
         handleInput()
         scrollCaretIntoView()
@@ -1383,7 +1439,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       ensureCaretOutsideInlineFormatting()
       clearInlineTypingState()
-      document.execCommand('insertParagraph', false)
+      insertLineBreakInParagraph()
       shouldResetInlineTypingRef.current = false
       handleInput()
       scrollCaretIntoView()
@@ -1402,9 +1458,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         ensureCaretOutsideInlineFormatting()
         clearInlineTypingState()
         clearColorTypingState()
-        if (!insertCleanParagraphAfterCurrentBlock()) {
-          document.execCommand('insertParagraph', false)
-        }
+        insertLineBreakInParagraph()
         shouldResetInlineTypingRef.current = false
         handleInput()
         scrollCaretIntoView()
@@ -1459,7 +1513,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertCleanParagraphAfterCurrentBlock, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isSelectionInsideCodeBlock, scrollCaretIntoView])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, handleInput, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isSelectionInsideCodeBlock, scrollCaretIntoView])
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -1586,6 +1640,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           overflow-x: auto;
           white-space: pre-wrap;
           line-height: 1.6;
+          min-height: 3.2em;
         }
 
         .prose-editor .code-block-wrapper {
@@ -1649,6 +1704,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           background-color: transparent;
           color: inherit;
           padding: 0;
+          display: block;
+          width: 100%;
+          min-height: 1.6em;
+          white-space: pre-wrap;
         }
         
         .prose-editor blockquote {
