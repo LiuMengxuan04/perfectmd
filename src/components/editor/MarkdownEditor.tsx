@@ -61,9 +61,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const [isFormulaDialogOpen, setIsFormulaDialogOpen] = useState(false)
   const [formulaDraft, setFormulaDraft] = useState('')
   const [editingLink, setEditingLink] = useState<{
-    element: HTMLAnchorElement
+    element: HTMLAnchorElement | null
     text: string
     href: string
+    range: Range | null
     position: { top: number; left: number }
   } | null>(null)
   const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null)
@@ -490,7 +491,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         return true
       }
 
-      if (currentLine === '1.') {
+      if (/^\d+\.$/.test(currentLine)) {
         e.preventDefault()
         if (!deleteMarkdownTrigger(selection, currentLine)) return false
         const listBlock = ensureIsolatedBlock()
@@ -1029,7 +1030,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     if (!selection || !selection.rangeCount) return
     const range = selection.getRangeAt(0)
     const currentBlock = getCurrentBlock(selection)
-    const codeText = document.createTextNode('\u200b')
+    const codeText = document.createTextNode('\n')
     const wrapper = document.createElement('div')
     wrapper.className = 'code-block-wrapper'
     const pre = document.createElement('pre')
@@ -1201,6 +1202,45 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return true
   }, [])
 
+  const isCaretInsideList = useCallback((): boolean => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editorRef.current) return false
+    const anchor = selection.anchorNode
+    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
+    if (!element) return false
+    const li = element.closest('li')
+    return !!(li && editorRef.current.contains(li))
+  }, [])
+
+  const removeSingleEmptyListAtCaret = useCallback((): boolean => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editorRef.current) return false
+    const anchor = selection.anchorNode
+    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
+    if (!element) return false
+
+    const li = element.closest('li') as HTMLLIElement | null
+    if (!li || !editorRef.current.contains(li)) return false
+    const list = li.parentElement as HTMLOListElement | HTMLUListElement | null
+    if (!list || (list.tagName !== 'UL' && list.tagName !== 'OL')) return false
+    if (list.children.length !== 1 || list.firstElementChild !== li) return false
+    const liText = (li.textContent || '').replace(/\u200b/g, '').trim()
+    if (liText.length > 0) return false
+
+    const p = document.createElement('p')
+    p.appendChild(document.createElement('br'))
+    list.parentNode?.insertBefore(p, list.nextSibling)
+    list.remove()
+
+    const caret = document.createRange()
+    caret.selectNodeContents(p)
+    caret.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedRangeRef.current = caret.cloneRange()
+    return true
+  }, [])
+
   const getCurrentTableCell = useCallback((): HTMLTableCellElement | null => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount || !editorRef.current) return null
@@ -1311,6 +1351,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         element: link,
         text: link.textContent || '',
         href: link.getAttribute('href') || '',
+        range: null,
         position: { top, left },
       })
       return
@@ -1569,11 +1610,26 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         setFormatState((prev) => ({ ...prev, heading: null }))
         break
       case 'link': {
-        const linkUrl = prompt('Enter URL:', 'https://')
-        if (linkUrl) {
-          document.execCommand('createLink', false, linkUrl)
+        const active = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+          ? range.commonAncestorContainer.parentElement
+          : range.commonAncestorContainer as HTMLElement | null
+        const currentLink = active?.closest('a') as HTMLAnchorElement | null
+        const selected = selectedText.trim()
+        const rect = range.getBoundingClientRect()
+        const popoverWidth = 320
+        const left = Math.max(8, Math.min(rect.left + rect.width / 2 - popoverWidth / 2, window.innerWidth - popoverWidth - 8))
+        const top = Math.max(8, rect.bottom + 8)
+        setEditingLink({
+          element: currentLink,
+          text: currentLink?.textContent || selected || '',
+          href: currentLink?.getAttribute('href') || 'https://',
+          range: range.cloneRange(),
+          position: { top, left },
+        })
+        if (!currentLink && selected) {
+          savedRangeRef.current = range.cloneRange()
         }
-        break
+        return
       }
       case 'hr':
         document.execCommand('insertHorizontalRule', false)
@@ -1665,6 +1721,12 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (isComposingRef.current) return
 
+    if ((e.key === 'Backspace' || e.key === 'Delete') && removeSingleEmptyListAtCaret()) {
+      e.preventDefault()
+      handleInput()
+      return
+    }
+
     if ((e.key === 'Backspace' || e.key === 'Delete') && selectedImage) {
       e.preventDefault()
       selectedImage.remove()
@@ -1698,11 +1760,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
-      const inBulletList = document.queryCommandState('insertUnorderedList')
-      const inOrderedList = document.queryCommandState('insertOrderedList')
+      const inList = isCaretInsideList()
       // Keep native behavior inside lists; in normal paragraphs we keep line
       // breaks in the same paragraph block for a Notion-like writing flow.
-      if (!inBulletList && !inOrderedList) {
+      if (!inList) {
         e.preventDefault()
         ensureCaretOutsideInlineFormatting()
         clearInlineTypingState()
@@ -1731,9 +1792,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     if (shouldResetInlineTypingRef.current) {
       if (e.key === 'Enter') {
-        const inBulletList = document.queryCommandState('insertUnorderedList')
-        const inOrderedList = document.queryCommandState('insertOrderedList')
-        if (inBulletList || inOrderedList) {
+        if (isCaretInsideList()) {
           shouldResetInlineTypingRef.current = false
           return
         }
@@ -1796,7 +1855,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, exitEmptyListItemWithLineBreak, handleInput, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isSelectionInsideCodeBlock, scrollCaretIntoView, selectedImage])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, exitEmptyListItemWithLineBreak, handleInput, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isCaretInsideList, isSelectionInsideCodeBlock, removeSingleEmptyListAtCaret, scrollCaretIntoView, selectedImage])
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
@@ -1845,18 +1904,43 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
                 onClick={() => {
                   if (!editingLink) return
                   const target = editingLink.element
-                  const text = editingLink.text.trim() || target.textContent || editingLink.href
+                  const text = editingLink.text.trim() || target?.textContent || editingLink.href
                   const href = editingLink.href.trim()
-                  if (!href) {
+                  if (target && !href) {
                     const node = document.createTextNode(text || '')
                     target.parentNode?.replaceChild(node, target)
-                  } else {
+                  } else if (target && href) {
                     const nextLink = document.createElement('a')
                     nextLink.textContent = text || href
                     nextLink.setAttribute('href', href)
                     nextLink.setAttribute('target', '_blank')
                     nextLink.setAttribute('rel', 'noopener noreferrer')
                     target.parentNode?.replaceChild(nextLink, target)
+                  } else if (editingLink.range && href) {
+                    const selection = window.getSelection()
+                    if (!selection) return
+                    const range = editingLink.range.cloneRange()
+                    selection.removeAllRanges()
+                    selection.addRange(range)
+                    if (!range.collapsed) {
+                      document.execCommand('createLink', false, href)
+                    } else {
+                      const label = text || href
+                      const a = document.createElement('a')
+                      a.textContent = label
+                      a.href = href
+                      a.target = '_blank'
+                      a.rel = 'noopener noreferrer'
+                      range.insertNode(a)
+                      const spacer = document.createTextNode(' ')
+                      a.parentNode?.insertBefore(spacer, a.nextSibling)
+                      const caret = document.createRange()
+                      caret.setStartAfter(spacer)
+                      caret.collapse(true)
+                      selection.removeAllRanges()
+                      selection.addRange(caret)
+                      savedRangeRef.current = caret.cloneRange()
+                    }
                   }
                   setEditingLink(null)
                   handleInput()
@@ -1881,8 +1965,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
                 onClick={() => {
                   if (!editingLink) return
                   const target = editingLink.element
-                  const node = document.createTextNode(editingLink.text || target.textContent || '')
-                  target.parentNode?.replaceChild(node, target)
+                  if (target) {
+                    const node = document.createTextNode(editingLink.text || target.textContent || '')
+                    target.parentNode?.replaceChild(node, target)
+                  }
                   setEditingLink(null)
                   handleInput()
                 }}

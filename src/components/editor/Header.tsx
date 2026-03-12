@@ -24,6 +24,7 @@ import {
 
 const CUSTOM_THEME_KEY = 'perfectmd-custom-theme-css'
 const CUSTOM_THEME_STYLE_ID = 'perfectmd-custom-theme-style'
+const APP_VERSION = 'v1.8.9'
 const AURORA_TEMPLATE_CSS = `:root {
   --background: #0a0616;
   --foreground: #f5f3ff;
@@ -183,6 +184,9 @@ export function Header() {
       <div className="flex items-center gap-3">
         <FileText className="h-6 w-6 text-primary" />
         <h1 className="text-lg font-semibold">Markdown Editor</h1>
+        <span className="rounded border px-2 py-0.5 text-[11px] text-muted-foreground">
+          {APP_VERSION}
+        </span>
         {currentDocument && (
           <span className="text-xs text-muted-foreground">
             • {isSaving ? 'Saving...' : 'Auto-saved'}
