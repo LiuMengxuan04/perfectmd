@@ -3,6 +3,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { TopToolbar } from './TopToolbar'
 import katex from 'katex'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 interface MarkdownEditorProps {
   content: string
@@ -38,7 +48,10 @@ const DEFAULT_FONT_SIZE = 16
 export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
   const savedRangeRef = useRef<Range | null>(null)
+  const formulaTargetRef = useRef<HTMLElement | null>(null)
   const [formatState, setFormatState] = useState<FormatState>(DEFAULT_FORMAT_STATE)
+  const [isFormulaDialogOpen, setIsFormulaDialogOpen] = useState(false)
+  const [formulaDraft, setFormulaDraft] = useState('')
   const isInternalChange = useRef(false)
   const shouldResetInlineTypingRef = useRef(false)
 
@@ -879,11 +892,27 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     if (!selection || !selection.rangeCount) return
     const range = selection.getRangeAt(0)
     const codeText = document.createTextNode('')
+    const wrapper = document.createElement('div')
+    wrapper.className = 'code-block-wrapper'
     const pre = document.createElement('pre')
     pre.className = 'editor-code-block'
     const code = document.createElement('code')
     code.appendChild(codeText)
     pre.appendChild(code)
+    const copyButton = document.createElement('button')
+    copyButton.type = 'button'
+    copyButton.className = 'code-copy-btn'
+    copyButton.setAttribute('contenteditable', 'false')
+    copyButton.setAttribute('data-copy-code-btn', 'true')
+    copyButton.title = 'Copy code'
+    copyButton.innerHTML = '⧉'
+    const copyToast = document.createElement('span')
+    copyToast.className = 'code-copy-toast'
+    copyToast.setAttribute('contenteditable', 'false')
+    copyToast.textContent = '复制成功'
+    wrapper.appendChild(pre)
+    wrapper.appendChild(copyButton)
+    wrapper.appendChild(copyToast)
 
     const paragraph = document.createElement('p')
     paragraph.appendChild(document.createElement('br'))
@@ -892,7 +921,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       range.deleteContents()
     }
     range.insertNode(paragraph)
-    range.insertNode(pre)
+    range.insertNode(wrapper)
 
     const caret = document.createRange()
     caret.setStart(codeText, 0)
@@ -906,11 +935,19 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const isSelectionInsideCodeBlock = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount || !editorRef.current) return false
-    const anchor = selection.anchorNode
-    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
-    if (!element) return false
-    const pre = element.closest('pre')
-    return !!pre && editorRef.current.contains(pre)
+    const range = selection.getRangeAt(0)
+    const nodesToCheck: Array<Node | null> = [
+      selection.anchorNode,
+      selection.focusNode,
+      range.commonAncestorContainer,
+    ]
+    for (const node of nodesToCheck) {
+      const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node as HTMLElement | null
+      if (!element) continue
+      const pre = element.closest('pre.editor-code-block')
+      if (pre && editorRef.current.contains(pre)) return true
+    }
+    return false
   }, [])
 
   const getCurrentTableCell = useCallback((): HTMLTableCellElement | null => {
@@ -931,7 +968,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     if (!normalized) {
       el.dataset.empty = 'true'
       try {
-        katex.render('\\square', el, { throwOnError: false, displayMode: false })
+        katex.render('x', el, { throwOnError: false, displayMode: false })
       } catch {
         el.innerHTML = '<span class="formula-inline-placeholder">fx</span>'
       }
@@ -945,6 +982,47 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     }
   }, [])
 
+  const openFormulaDialog = useCallback((initialLatex: string, targetEl: HTMLElement | null) => {
+    formulaTargetRef.current = targetEl
+    setFormulaDraft(initialLatex)
+    setIsFormulaDialogOpen(true)
+  }, [])
+
+  const saveFormulaFromDialog = useCallback(() => {
+    const target = formulaTargetRef.current
+    const latex = formulaDraft.trim()
+    if (target) {
+      renderFormulaElement(target, latex)
+      handleInput()
+    } else {
+      const selection = restoreSavedSelection()
+      if (!selection || !selection.rangeCount) {
+        setIsFormulaDialogOpen(false)
+        return
+      }
+      const range = selection.getRangeAt(0)
+      const formula = document.createElement('span')
+      formula.contentEditable = 'false'
+      formula.className = 'formula-inline'
+      renderFormulaElement(formula, latex)
+      if (!selection.isCollapsed) {
+        range.deleteContents()
+      }
+      range.insertNode(formula)
+      const space = document.createTextNode(' ')
+      formula.parentNode?.insertBefore(space, formula.nextSibling)
+      const caret = document.createRange()
+      caret.setStartAfter(space)
+      caret.collapse(true)
+      selection.removeAllRanges()
+      selection.addRange(caret)
+      savedRangeRef.current = caret.cloneRange()
+      handleInput()
+    }
+    setIsFormulaDialogOpen(false)
+    formulaTargetRef.current = null
+  }, [formulaDraft, handleInput, renderFormulaElement, restoreSavedSelection])
+
   useEffect(() => {
     const editor = editorRef.current
     if (!editor) return
@@ -954,16 +1032,61 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       const formula = target?.closest('.formula-inline') as HTMLElement | null
       if (!formula || !editor.contains(formula)) return
 
-      const currentLatex = formula.dataset.latex || ''
-      const nextLatex = prompt('编辑公式（LaTeX）', currentLatex)
-      if (nextLatex === null) return
-      renderFormulaElement(formula, nextLatex)
-      handleInput()
+      event.preventDefault()
+      event.stopPropagation()
+      openFormulaDialog(formula.dataset.latex || '', formula)
     }
 
     editor.addEventListener('click', handleFormulaClick)
-    return () => editor.removeEventListener('click', handleFormulaClick)
-  }, [handleInput, renderFormulaElement])
+    editor.addEventListener('dblclick', handleFormulaClick)
+    return () => {
+      editor.removeEventListener('click', handleFormulaClick)
+      editor.removeEventListener('dblclick', handleFormulaClick)
+    }
+  }, [openFormulaDialog])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+
+    const handleCopyCodeClick = async (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      const button = target?.closest('[data-copy-code-btn="true"]') as HTMLButtonElement | null
+      if (!button || !editor.contains(button)) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const wrapper = button.closest('.code-block-wrapper')
+      const code = wrapper?.querySelector('pre code')
+      const copyText = code?.textContent || ''
+      if (!copyText) return
+
+      try {
+        await navigator.clipboard.writeText(copyText)
+      } catch {
+        const helper = document.createElement('textarea')
+        helper.value = copyText
+        document.body.appendChild(helper)
+        helper.select()
+        document.execCommand('copy')
+        document.body.removeChild(helper)
+      }
+
+      const toast = wrapper?.querySelector('.code-copy-toast')
+      if (toast) {
+        toast.classList.add('show')
+        window.setTimeout(() => {
+          toast.classList.remove('show')
+        }, 1200)
+      }
+    }
+
+    editor.addEventListener('click', handleCopyCodeClick)
+    return () => {
+      editor.removeEventListener('click', handleCopyCodeClick)
+    }
+  }, [])
 
   const applyFontSize = useCallback((size: number) => {
     const selection = restoreSavedSelection()
@@ -1109,27 +1232,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         insertCodeBlockAtCaret()
         break
       case 'formula':
-        {
-          const latex = selectedText.trim()
-          const formula = document.createElement('span')
-          formula.contentEditable = 'false'
-          formula.className = 'formula-inline'
-          renderFormulaElement(formula, latex)
-
-          if (!selection.isCollapsed) {
-            range.deleteContents()
-          }
-          range.insertNode(formula)
-          const space = document.createTextNode(' ')
-          formula.parentNode?.insertBefore(space, formula.nextSibling)
-          const caret = document.createRange()
-          caret.setStartAfter(space)
-          caret.collapse(true)
-          selection.removeAllRanges()
-          selection.addRange(caret)
-          savedRangeRef.current = caret.cloneRange()
-        }
-        break
+        openFormulaDialog(selectedText.trim(), null)
+        return
       case 'tableAddRow': {
         const cell = getCurrentTableCell()
         if (!cell) break
@@ -1187,7 +1291,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     // Trigger content update
     handleInput()
-  }, [applyFontSize, clearInlineTypingState, ensureCaretOutsideInlineFormatting, getCurrentTableCell, getFontSizeFromNode, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, renderFormulaElement, restoreSavedSelection, wrapSelectionWithStyle])
+  }, [applyFontSize, clearInlineTypingState, ensureCaretOutsideInlineFormatting, getCurrentTableCell, getFontSizeFromNode, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, openFormulaDialog, restoreSavedSelection, wrapSelectionWithStyle])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -1319,6 +1423,35 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         suppressContentEditableWarning
         data-placeholder="Start writing..."
       />
+
+      <Dialog open={isFormulaDialogOpen} onOpenChange={setIsFormulaDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>公式编辑</DialogTitle>
+            <DialogDescription>输入 LaTeX 表达式，留空则使用占位公式。</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={formulaDraft}
+            onChange={(e) => setFormulaDraft(e.target.value)}
+            placeholder="例如: \\frac{a+b}{c}"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                saveFormulaFromDialog()
+              }
+            }}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsFormulaDialogOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={saveFormulaFromDialog}>
+              应用公式
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       <style jsx global>{`
         .prose-editor:empty:before {
@@ -1399,6 +1532,61 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           overflow-x: auto;
           white-space: pre-wrap;
           line-height: 1.6;
+        }
+
+        .prose-editor .code-block-wrapper {
+          position: relative;
+          margin: 1em 0;
+        }
+
+        .prose-editor .code-block-wrapper pre {
+          margin: 0;
+          border-radius: 8px;
+        }
+
+        .prose-editor .code-copy-btn {
+          position: absolute;
+          right: 0.65rem;
+          bottom: 0.55rem;
+          height: 1.7rem;
+          min-width: 1.7rem;
+          border-radius: 0.4rem;
+          border: 1px solid var(--pmd-code-border);
+          background: color-mix(in oklch, var(--background) 90%, transparent);
+          color: var(--muted-foreground);
+          font-size: 0.8rem;
+          line-height: 1;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .prose-editor .code-copy-btn:hover {
+          color: var(--foreground);
+          border-color: var(--foreground);
+        }
+
+        .prose-editor .code-copy-toast {
+          position: absolute;
+          right: 2.9rem;
+          bottom: 0.7rem;
+          opacity: 0;
+          transform: translateY(4px);
+          pointer-events: none;
+          border-radius: 0.4rem;
+          background: var(--foreground);
+          color: var(--background);
+          font-size: 11px;
+          line-height: 1;
+          padding: 0.3rem 0.45rem;
+          transition: all 0.2s ease;
+        }
+
+        .prose-editor .code-copy-toast.show {
+          opacity: 1;
+          transform: translateY(0);
         }
         
         .prose-editor pre code {

@@ -60,7 +60,7 @@ jobs:
 
       - name: Create icon generation script
         run: |
-          mkdir -p src-tauri/icons
+          node -e "require('fs').mkdirSync('src-tauri/icons', { recursive: true })"
 
       - name: Generate icons
         run: |
