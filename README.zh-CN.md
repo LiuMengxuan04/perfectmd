@@ -3,6 +3,7 @@
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 一个现代化 Markdown 编辑器，结合了 Typora 的简洁体验与 Word 风格的富文本能力。
+欢迎访问 [PerfectMD 的 DeepWiki 页面](https://deepwiki.com/ssbsunshengbo/perfectmd) 了解更多项目详情。
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
