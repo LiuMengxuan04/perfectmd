@@ -501,7 +501,10 @@ export function Header() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setIsThemeDialogOpen(true)}>
+              <DropdownMenuItem
+                onClick={() => setIsThemeDialogOpen(true)}
+                className="text-foreground data-[highlighted]:bg-accent/40 data-[highlighted]:text-foreground focus:bg-accent/40 focus:text-foreground"
+              >
                 模板与自定义 CSS
               </DropdownMenuItem>
             </DropdownMenuContent>

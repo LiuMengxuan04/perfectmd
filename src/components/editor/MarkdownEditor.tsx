@@ -1709,23 +1709,6 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const editor = editorRef.current
     if (!editor) return
 
-    const normalizeEditingCodeBlock = (target: EventTarget | null) => {
-      const element = target as HTMLElement | null
-      const codeEl = element?.closest('.code-block-wrapper pre code') as HTMLElement | null
-      if (!codeEl) return
-      if (codeEl.getAttribute('data-highlighted') === 'true') {
-        normalizeCodeBlockToPlainText(codeEl)
-      }
-    }
-
-    const handleFocusIn = (event: FocusEvent) => {
-      normalizeEditingCodeBlock(event.target)
-    }
-
-    const handleCodeMouseDown = (event: MouseEvent) => {
-      normalizeEditingCodeBlock(event.target)
-    }
-
     const handleFocusOut = (event: FocusEvent) => {
       const element = event.target as HTMLElement | null
       const codeEl = element?.closest('.code-block-wrapper pre code') as HTMLElement | null
@@ -1749,7 +1732,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       const target = event.target as HTMLElement | null
       const select = target?.closest('[data-code-lang-select="true"]') as HTMLElement | null
       if (!select || !editor.contains(select)) return
+      event.preventDefault()
       event.stopPropagation()
+      const htmlSelect = select as HTMLSelectElement
+      window.setTimeout(() => htmlSelect.focus(), 0)
     }
 
     const handleLangChange = (event: Event) => {
@@ -1765,21 +1751,17 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       handleInput()
     }
 
-    editor.addEventListener('focusin', handleFocusIn)
     editor.addEventListener('focusout', handleFocusOut)
-    editor.addEventListener('mousedown', handleCodeMouseDown)
     editor.addEventListener('mousedown', handleLangMouseDown)
     editor.addEventListener('change', handleLangChange)
     editor.addEventListener('input', handleLangChange)
     return () => {
-      editor.removeEventListener('focusin', handleFocusIn)
       editor.removeEventListener('focusout', handleFocusOut)
-      editor.removeEventListener('mousedown', handleCodeMouseDown)
       editor.removeEventListener('mousedown', handleLangMouseDown)
       editor.removeEventListener('change', handleLangChange)
       editor.removeEventListener('input', handleLangChange)
     }
-  }, [applySyntaxHighlight, handleInput, normalizeCodeBlockToPlainText])
+  }, [applySyntaxHighlight, handleInput])
 
   const applyFontSize = useCallback((size: number) => {
     const selection = restoreSavedSelection()
