@@ -142,6 +142,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const ensureCodeBlockControls = useCallback((editor: HTMLDivElement) => {
     const wrappers = editor.querySelectorAll('.code-block-wrapper')
     wrappers.forEach((wrapper) => {
+      const codeEl = wrapper.querySelector('pre.editor-code-block code') as HTMLElement | null
+      if (!codeEl) {
+        wrapper.querySelectorAll('.code-copy-btn, .code-copy-toast, [data-code-lang-select="true"]').forEach((node) => node.remove())
+        return
+      }
       let langSelect = wrapper.querySelector('[data-code-lang-select="true"]') as HTMLSelectElement | null
       if (!langSelect) {
         langSelect = document.createElement('select')
@@ -244,18 +249,12 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       }
 
       ensureCodeBlockControls(editor)
-      editor.querySelectorAll('.code-block-wrapper pre code').forEach((codeNode) => {
-        normalizeCodeBlockToPlainText(codeNode as HTMLElement)
-      })
 
       isInternalChange.current = true
       const newContent = editor.innerHTML
       onChange(newContent)
-      requestAnimationFrame(() => {
-        renderCodeHighlights(editor, false)
-      })
     }
-  }, [ensureCodeBlockControls, normalizeCodeBlockToPlainText, onChange, renderCodeHighlights])
+  }, [ensureCodeBlockControls, onChange])
 
   const scrollCaretIntoView = useCallback(() => {
     requestAnimationFrame(() => {
@@ -1222,28 +1221,12 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const insertLineBreakInParagraph = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount) return false
-    const range = selection.getRangeAt(0)
-    const block = getCurrentBlock(selection)
-    if (!block) return false
-    const tailRange = document.createRange()
-    tailRange.setStart(range.endContainer, range.endOffset)
-    tailRange.setEndAfter(block.lastChild || block)
-    const isAtBlockEnd = tailRange.toString().length === 0
-    range.deleteContents()
-    const br = document.createElement('br')
-    range.insertNode(br)
-    const caret = document.createRange()
-    if (isAtBlockEnd) {
-      const trailingBr = document.createElement('br')
-      br.parentNode?.insertBefore(trailingBr, br.nextSibling)
+    document.execCommand('insertLineBreak', false)
+    if (selection.rangeCount) {
+      savedRangeRef.current = selection.getRangeAt(0).cloneRange()
     }
-    caret.setStartAfter(br)
-    caret.collapse(true)
-    selection.removeAllRanges()
-    selection.addRange(caret)
-    savedRangeRef.current = caret.cloneRange()
     return true
-  }, [getCurrentBlock])
+  }, [])
 
   const exitCurrentBlockWithNewParagraph = useCallback((): boolean => {
     const selection = window.getSelection()
@@ -1498,10 +1481,22 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         const href = link.getAttribute('href') || link.href || ''
         if (href) {
           try {
+            const anchor = document.createElement('a')
+            anchor.href = href
+            anchor.target = '_blank'
+            anchor.rel = 'noopener noreferrer'
+            document.body.appendChild(anchor)
+            anchor.click()
+            document.body.removeChild(anchor)
+            return
+          } catch {
+            // Continue fallback
+          }
+          try {
             const openedWindow = window.open(href, '_blank', 'noopener,noreferrer')
             if (openedWindow) return
           } catch {
-            // continue to shell fallback
+            // Continue fallback
           }
           void openExternal(href).catch(() => {
             // ignore
@@ -1541,6 +1536,18 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const url = href.trim()
     if (!url) return
     try {
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.target = '_blank'
+      anchor.rel = 'noopener noreferrer'
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      return
+    } catch {
+      // Continue to other fallbacks.
+    }
+    try {
       const openedWindow = window.open(url, '_blank', 'noopener,noreferrer')
       if (openedWindow) return
     } catch {
@@ -1552,13 +1559,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     } catch {
       // ignore
     }
-    const a = document.createElement('a')
-    a.href = url
-    a.target = '_blank'
-    a.rel = 'noopener noreferrer'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    // No-op fallback: keep editor stable even if platform blocks opening.
   }, [])
 
   const openFormulaDialog = useCallback((initialLatex: string, targetEl: HTMLElement | null) => {
@@ -1709,6 +1710,17 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       normalizeEditingCodeBlock(event.target)
     }
 
+    const handleFocusOut = (event: FocusEvent) => {
+      const element = event.target as HTMLElement | null
+      const codeEl = element?.closest('.code-block-wrapper pre code') as HTMLElement | null
+      if (!codeEl) return
+      const wrapper = codeEl.closest('.code-block-wrapper')
+      const langSelect = wrapper?.querySelector('[data-code-lang-select="true"]') as HTMLSelectElement | null
+      const lang = (langSelect?.value || wrapper?.getAttribute('data-code-language') || 'plaintext').toLowerCase()
+      applySyntaxHighlight(codeEl, lang, true)
+      handleInput()
+    }
+
     const handleLangMouseDown = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null
       const select = target?.closest('[data-code-lang-select="true"]') as HTMLElement | null
@@ -1730,11 +1742,13 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     }
 
     editor.addEventListener('focusin', handleFocusIn)
+    editor.addEventListener('focusout', handleFocusOut)
     editor.addEventListener('mousedown', handleCodeMouseDown)
     editor.addEventListener('mousedown', handleLangMouseDown)
     editor.addEventListener('change', handleLangChange)
     return () => {
       editor.removeEventListener('focusin', handleFocusIn)
+      editor.removeEventListener('focusout', handleFocusOut)
       editor.removeEventListener('mousedown', handleCodeMouseDown)
       editor.removeEventListener('mousedown', handleLangMouseDown)
       editor.removeEventListener('change', handleLangChange)
