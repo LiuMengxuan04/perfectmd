@@ -4,7 +4,8 @@ import { useEditorStore } from '@/store/editor-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { FileText, Save, Palette } from 'lucide-react'
+import { FileText, Save, Palette, Download, FileDown } from 'lucide-react'
+import { saveAsMarkdown, exportAsPdf } from '@/lib/document-export'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
@@ -467,6 +468,20 @@ export function Header() {
     setTimeout(() => setIsSaving(false), 500)
   }, [currentDocument, saveDocument])
 
+  const handleSaveAs = useCallback(async () => {
+    if (!currentDocument) return
+    const result = await saveAsMarkdown(currentDocument.content, currentDocument.title)
+    if (result === 'saved') toast.success('文件已保存')
+    else if (result === 'fallback') toast.success('文件已下载')
+    // 'cancelled' → user dismissed dialog, no notification needed
+  }, [currentDocument])
+
+  const handleExportPdf = useCallback(() => {
+    if (!currentDocument) return
+    toast.info('正在打开打印对话框，请选择「存储为PDF」以保存文件…')
+    exportAsPdf(currentDocument.content, currentDocument.title)
+  }, [currentDocument])
+
   // Auto-save on Ctrl+S
   useEffect(() => {
     const handleSave = () => {
@@ -558,6 +573,26 @@ export function Header() {
             >
               <Save className="h-4 w-4" />
               Save
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSaveAs}
+              title="另存为 Markdown 文件"
+              className="gap-1"
+            >
+              <Download className="h-4 w-4" />
+              另存为
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportPdf}
+              title="导出为 PDF"
+              className="gap-1"
+            >
+              <FileDown className="h-4 w-4" />
+              导出PDF
             </Button>
           </>
         )}

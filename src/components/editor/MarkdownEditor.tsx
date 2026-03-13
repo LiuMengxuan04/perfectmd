@@ -258,6 +258,30 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
       }
 
+      // Unwrap lone block elements (headings, lists) that ended up inside <p>
+      // This can happen when browser's execCommand('formatBlock') or
+      // execCommand('insertUnorderedList') wraps content inside the current <p>.
+      const nestedBlocks = Array.from(editor.querySelectorAll(
+        'p > ul, p > ol, p > h1, p > h2, p > h3, p > h4, p > h5, p > h6'
+      ))
+      for (const block of nestedBlocks) {
+        const parentP = block.parentElement
+        if (!parentP || parentP === editor || !parentP.parentNode) continue
+        // Only unwrap if the <p> contains no other significant content
+        const hasOtherContent = Array.from(parentP.childNodes).some((n) => {
+          if (n === block) return false
+          if (n.nodeType === Node.TEXT_NODE) return (n.textContent || '').trim().length > 0
+          if (n.nodeName === 'BR') return false
+          return true
+        })
+        if (!hasOtherContent) {
+          parentP.parentNode.insertBefore(block, parentP.nextSibling)
+          if (!(parentP.textContent || '').replace(/\u200b/g, '').trim()) {
+            parentP.remove()
+          }
+        }
+      }
+
       ensureCodeBlockControls(editor)
 
       isInternalChange.current = true
@@ -1244,6 +1268,27 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return true
   }, [])
 
+  const exitHeadingWithParagraph = useCallback((): boolean => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editorRef.current) return false
+    const anchor = selection.anchorNode
+    const element = anchor?.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor as HTMLElement | null
+    const heading = element?.closest('h1, h2, h3, h4, h5, h6') as HTMLElement | null
+    if (!heading || !editorRef.current.contains(heading)) return false
+
+    const paragraph = document.createElement('p')
+    paragraph.appendChild(document.createElement('br'))
+    heading.parentNode?.insertBefore(paragraph, heading.nextSibling)
+
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    savedRangeRef.current = range.cloneRange()
+    return true
+  }, [])
+
   const exitCurrentBlockWithNewParagraph = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount || !editorRef.current) return false
@@ -1863,13 +1908,37 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         setFormatState((prev) => ({ ...prev, heading: headingTag }))
         break
       }
-      case 'list':
-        if (value === 'bullet') {
-          document.execCommand('insertUnorderedList', false)
-        } else {
-          document.execCommand('insertOrderedList', false)
+      case 'list': {
+        // If already inside a list item, use execCommand to toggle list off
+        const alreadyInList = !!getCurrentListItem()
+        if (alreadyInList) {
+          document.execCommand(value === 'bullet' ? 'insertUnorderedList' : 'insertOrderedList', false)
+          break
         }
+        // Otherwise, use direct DOM manipulation to create the list as a sibling
+        // of the current block (NOT nested inside a <p>), avoiding the browser
+        // execCommand quirk of nesting <ul> inside <p>.
+        const listBlock = getCurrentBlock(selection)
+        if (!listBlock || listBlock === editorRef.current) {
+          document.execCommand(value === 'bullet' ? 'insertUnorderedList' : 'insertOrderedList', false)
+          break
+        }
+        const listEl = document.createElement(value === 'bullet' ? 'ul' : 'ol')
+        const newLi = document.createElement('li')
+        while (listBlock.firstChild) {
+          newLi.appendChild(listBlock.firstChild)
+        }
+        if (!newLi.innerHTML.trim()) newLi.appendChild(document.createElement('br'))
+        listEl.appendChild(newLi)
+        listBlock.parentNode?.replaceChild(listEl, listBlock)
+        const listR = document.createRange()
+        listR.selectNodeContents(newLi)
+        listR.collapse(false)
+        selection.removeAllRanges()
+        selection.addRange(listR)
+        savedRangeRef.current = listR.cloneRange()
         break
+      }
       case 'quote':
         document.execCommand('formatBlock', false, '<blockquote>')
         setFormatState((prev) => ({ ...prev, heading: null }))
@@ -1980,7 +2049,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     // Trigger content update
     handleInput()
-  }, [applyFontSize, clearInlineTypingState, ensureCaretOutsideInlineFormatting, getCurrentTableCell, getFontSizeFromNode, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, openFormulaDialog, restoreSavedSelection, wrapSelectionWithStyle])
+  }, [applyFontSize, clearInlineTypingState, ensureCaretOutsideInlineFormatting, getCurrentBlock, getCurrentListItem, getCurrentTableCell, getFontSizeFromNode, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, openFormulaDialog, restoreSavedSelection, wrapSelectionWithStyle])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -2019,6 +2088,16 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     if (e.key === 'Enter' && !e.shiftKey && handleListEnter()) {
       e.preventDefault()
+      handleInput()
+      scrollCaretIntoView()
+      return
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey && exitHeadingWithParagraph()) {
+      e.preventDefault()
+      clearInlineTypingState()
+      clearColorTypingState()
+      shouldResetInlineTypingRef.current = false
       handleInput()
       scrollCaretIntoView()
       return
@@ -2120,7 +2199,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, handleInput, handleListEnter, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isCaretInsideList, isSelectionInsideCodeBlock, removeSingleEmptyListAtCaret, scrollCaretIntoView, selectedImage])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, exitHeadingWithParagraph, handleInput, handleListEnter, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isCaretInsideList, isSelectionInsideCodeBlock, removeSingleEmptyListAtCaret, scrollCaretIntoView, selectedImage])
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
@@ -2324,7 +2403,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         
         .prose-editor {
-          line-height: 1.8;
+          line-height: 1.55;
           font-size: 16px;
           --pmd-link-color: #3b82f6;
           --pmd-code-bg: var(--muted);
@@ -2341,7 +2420,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         /* Font size spans - maintain consistent line height */
         .prose-editor .font-size-span {
           display: inline;
-          line-height: 1.6;
+          line-height: inherit;
           vertical-align: baseline;
         }
         
@@ -2494,10 +2573,21 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
 
         .prose-editor p {
-          line-height: 1.8;
-          min-height: 1.8em;
+          line-height: 1.6;
+          min-height: 1.6em;
           white-space: pre-wrap;
+          color: var(--foreground);
           caret-color: var(--foreground);
+        }
+
+        /* Prevent paragraph-box border/background leaking into headings or lists
+           that may end up as direct children of a <p> via browser execCommand */
+        .prose-editor p:has(> h1, > h2, > h3, > h4, > h5, > h6, > ul, > ol) {
+          border: none !important;
+          background: none !important;
+          box-shadow: none !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
         }
         
         .prose-editor blockquote {
