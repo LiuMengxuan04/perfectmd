@@ -476,10 +476,12 @@ export function Header() {
     // 'cancelled' → user dismissed dialog, no notification needed
   }, [currentDocument])
 
-  const handleExportPdf = useCallback(() => {
+  const handleExportPdf = useCallback(async () => {
     if (!currentDocument) return
-    toast.info('正在打开打印对话框，请选择「存储为PDF」以保存文件…')
-    exportAsPdf(currentDocument.content, currentDocument.title)
+    toast.info('正在导出 PDF，请稍候…')
+    const result = await exportAsPdf(currentDocument.content, currentDocument.title)
+    if (result === 'saved') toast.success('PDF 已保存')
+    else if (result === 'fallback') toast.success('PDF 已下载')
   }, [currentDocument])
 
   // Auto-save on Ctrl+S

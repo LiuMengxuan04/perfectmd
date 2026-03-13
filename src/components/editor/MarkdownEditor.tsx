@@ -258,11 +258,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
       }
 
-      // Unwrap lone block elements (headings, lists) that ended up inside <p>
-      // This can happen when browser's execCommand('formatBlock') or
-      // execCommand('insertUnorderedList') wraps content inside the current <p>.
+      // Unwrap headings that ended up inside <p>.
+      // We intentionally keep lists inside paragraph blocks for the "paragraph box"
+      // editing experience.
       const nestedBlocks = Array.from(editor.querySelectorAll(
-        'p > ul, p > ol, p > h1, p > h2, p > h3, p > h4, p > h5, p > h6'
+        'p > h1, p > h2, p > h3, p > h4, p > h5, p > h6'
       ))
       for (const block of nestedBlocks) {
         const parentP = block.parentElement
@@ -1351,31 +1351,34 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const liText = (li.textContent || '').replace(/\u200b/g, '').trim()
     const isEmpty = liText.length === 0
     if (isEmpty) {
+      const listParent = list.parentNode
+      const listNextSibling = list.nextSibling
       const listContainer = list.parentElement?.tagName.toLowerCase() === 'p'
-        ? list.parentElement
-        : list
-      const previous = listContainer?.previousElementSibling || null
-      const next = listContainer?.nextElementSibling || null
+        ? list.parentElement as HTMLParagraphElement
+        : null
       list.removeChild(li)
       if (list.children.length === 0) {
         list.remove()
       }
-      cleanupEmptyParagraphContainer(listContainer)
-
       const caret = document.createRange()
-      if (previous && previous.nodeType === Node.ELEMENT_NODE) {
-        caret.selectNodeContents(previous)
-        caret.collapse(false)
-      } else if (next && next.nodeType === Node.ELEMENT_NODE) {
-        caret.selectNodeContents(next)
-        caret.collapse(true)
-      } else if (editorRef.current.lastChild && editorRef.current.lastChild.nodeType === Node.ELEMENT_NODE) {
-        caret.selectNodeContents(editorRef.current.lastChild)
+      if (listContainer) {
+        const textOnly = (listContainer.textContent || '').replace(/\u200b/g, '').trim()
+        const hasList = !!listContainer.querySelector('ul, ol')
+        if (!hasList && textOnly.length === 0) {
+          listContainer.innerHTML = '<br>'
+        } else {
+          listContainer.appendChild(document.createElement('br'))
+        }
+        caret.selectNodeContents(listContainer)
         caret.collapse(false)
       } else {
         const p = document.createElement('p')
         p.appendChild(document.createElement('br'))
-        editorRef.current.appendChild(p)
+        if (listParent) {
+          listParent.insertBefore(p, listNextSibling)
+        } else {
+          editorRef.current.appendChild(p)
+        }
         caret.selectNodeContents(p)
         caret.collapse(true)
       }
@@ -1915,9 +1918,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           document.execCommand(value === 'bullet' ? 'insertUnorderedList' : 'insertOrderedList', false)
           break
         }
-        // Otherwise, use direct DOM manipulation to create the list as a sibling
-        // of the current block (NOT nested inside a <p>), avoiding the browser
-        // execCommand quirk of nesting <ul> inside <p>.
+        // Keep list in the current paragraph block so paragraph-box UI stays visible.
         const listBlock = getCurrentBlock(selection)
         if (!listBlock || listBlock === editorRef.current) {
           document.execCommand(value === 'bullet' ? 'insertUnorderedList' : 'insertOrderedList', false)
@@ -1930,7 +1931,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         if (!newLi.innerHTML.trim()) newLi.appendChild(document.createElement('br'))
         listEl.appendChild(newLi)
-        listBlock.parentNode?.replaceChild(listEl, listBlock)
+        listBlock.appendChild(listEl)
         const listR = document.createRange()
         listR.selectNodeContents(newLi)
         listR.collapse(false)
@@ -2580,9 +2581,9 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           caret-color: var(--foreground);
         }
 
-        /* Prevent paragraph-box border/background leaking into headings or lists
-           that may end up as direct children of a <p> via browser execCommand */
-        .prose-editor p:has(> h1, > h2, > h3, > h4, > h5, > h6, > ul, > ol) {
+        /* Prevent paragraph-box border/background leaking into headings that may
+           end up as direct children of a <p> via browser formatBlock behavior. */
+        .prose-editor p:has(> h1, > h2, > h3, > h4, > h5, > h6) {
           border: none !important;
           background: none !important;
           box-shadow: none !important;

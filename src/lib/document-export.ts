@@ -2,12 +2,8 @@
  * document-export.ts
  *
  * Utilities for saving/exporting the current document.
- *   - saveAsMarkdown  – saves as .md file via Tauri native dialog, browser download as fallback
- *   - exportAsPdf     – opens the OS print dialog via a hidden iframe so the user can
- *                       "Save as PDF".  This approach:
- *                         • fully supports Chinese / CJK characters (uses system fonts)
- *                         • produces selectable text (not rasterised images)
- *                         • requires NO external dependencies beyond the browser runtime
+ *   - saveAsMarkdown  – saves as .md file via Tauri native dialog, browser fallback
+ *   - exportAsPdf     – renders editor HTML to PDF and saves via native dialog
  */
 
 import { htmlToMarkdown } from './html-to-markdown'
@@ -80,155 +76,151 @@ export async function saveAsMarkdown(
 // Export PDF
 // ---------------------------------------------------------------------------
 
-/**
- * Minimal print CSS that:
- *   1. Uses a comprehensive CJK-safe system font stack (no external downloads needed)
- *   2. Strips editor chrome (copy buttons, language selectors, hover controls)
- *   3. Resets colours to black-on-white for a clean printed page
- */
-const PRINT_CSS = `
-  *, *::before, *::after { box-sizing: border-box; }
-  @page { margin: 2cm; size: A4; }
-
-  body {
+const PDF_RENDER_STYLE = `
+  .pdf-export-root {
+    box-sizing: border-box;
+    width: 794px;
+    background: #fff;
+    color: #111;
+    padding: 36px 40px;
+    font-size: 15px;
+    line-height: 1.7;
     font-family:
       'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Microsoft JhengHei',
       'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei',
       'Helvetica Neue', Arial, sans-serif;
-    font-size: 11pt;
-    line-height: 1.8;
+  }
+  .pdf-export-root h1, .pdf-export-root h2, .pdf-export-root h3,
+  .pdf-export-root h4, .pdf-export-root h5, .pdf-export-root h6 {
     color: #111;
-    background: #fff;
-    margin: 0;
-    padding: 0;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    margin: 0.8em 0 0.45em;
   }
-
-  h1 { font-size: 22pt; font-weight: 700; margin: 0 0 14pt; page-break-after: avoid; }
-  h2 { font-size: 17pt; font-weight: 600; margin: 18pt 0 10pt; page-break-after: avoid; }
-  h3 { font-size: 14pt; font-weight: 600; margin: 14pt 0 8pt; page-break-after: avoid; }
-  h4, h5, h6 { font-size: 12pt; font-weight: 600; margin: 10pt 0 6pt; page-break-after: avoid; }
-
-  p { margin: 0 0 8pt; page-break-inside: avoid; }
-
-  pre {
+  .pdf-export-root pre {
     background: #f5f5f5;
-    border: 1pt solid #ddd;
-    border-radius: 4pt;
-    padding: 8pt 10pt;
-    font-family: 'SFMono-Regular', 'Cascadia Code', Consolas, Menlo, monospace;
-    font-size: 9pt;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow: hidden;
     white-space: pre-wrap;
-    word-break: break-all;
-    page-break-inside: avoid;
-    margin: 6pt 0 10pt;
+    word-break: break-word;
+    font-family: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 13px;
   }
-  code {
-    background: #f0f0f0;
-    padding: 0 3pt;
-    font-family: 'SFMono-Regular', 'Cascadia Code', Consolas, Menlo, monospace;
-    font-size: 9pt;
-    border-radius: 2pt;
+  .pdf-export-root code {
+    font-family: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
   }
-  pre code { background: transparent; padding: 0; font-size: inherit; }
-
-  blockquote {
-    border-left: 3pt solid #aaa;
-    margin: 8pt 0;
-    padding: 4pt 0 4pt 14pt;
-    color: #555;
-    page-break-inside: avoid;
+  .pdf-export-root table { border-collapse: collapse; width: 100%; }
+  .pdf-export-root th, .pdf-export-root td {
+    border: 1px solid #ccc;
+    padding: 6px 8px;
+    text-align: left;
   }
-
-  table { border-collapse: collapse; width: 100%; margin: 8pt 0; page-break-inside: avoid; }
-  th, td { border: 1pt solid #ccc; padding: 5pt 8pt; text-align: left; }
-  th { background: #f5f5f5; font-weight: 600; }
-
-  ul, ol { padding-left: 18pt; margin: 4pt 0 8pt; }
-  li { margin: 2pt 0; }
-
-  a { color: #1155cc; text-decoration: underline; }
-  hr { border: none; border-top: 1pt solid #ddd; margin: 12pt 0; }
-  img { max-width: 100%; height: auto; page-break-inside: avoid; }
-
-  /* KaTeX math */
-  .katex { font-size: 1em !important; }
-  .katex-display { margin: 6pt 0; overflow-x: auto; }
-
-  /* Hide editor-only chrome */
-  .code-controls,
-  .code-copy-btn,
-  .code-lang-select,
-  .code-copy-toast,
-  [data-code-controls],
-  [data-code-copy-btn],
-  [data-code-lang-select] {
+  .pdf-export-root .code-controls,
+  .pdf-export-root .code-copy-btn,
+  .pdf-export-root .code-copy-toast,
+  .pdf-export-root [data-code-lang-select],
+  .pdf-export-root [contenteditable='false'] {
     display: none !important;
   }
 `
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+function buildPdfRenderContainer(content: string): HTMLElement {
+  const host = document.createElement('div')
+  host.style.cssText = 'position:fixed;left:-100000px;top:0;pointer-events:none;opacity:0;z-index:-1;'
+
+  const style = document.createElement('style')
+  style.textContent = PDF_RENDER_STYLE
+  host.appendChild(style)
+
+  const root = document.createElement('div')
+  root.className = 'pdf-export-root'
+  root.innerHTML = content
+  host.appendChild(root)
+
+  document.body.appendChild(host)
+  return host
 }
 
-/**
- * Export the editor's HTML content as a PDF via the OS's native print dialog.
- * The user can choose the save path and file name inside the dialog itself.
- *
- * Chinese / CJK text is handled correctly because we rely on the WebView's
- * built-in PDF renderer (which uses system fonts), rather than rasterising
- * the content into images.
- */
-export function exportAsPdf(content: string, title: string): void {
+function arrayBufferToUint8Array(buffer: ArrayBuffer): Uint8Array {
+  return new Uint8Array(buffer)
+}
+
+type ExportPdfResult = 'saved' | 'cancelled' | 'fallback'
+
+export async function exportAsPdf(
+  content: string,
+  title: string,
+): Promise<ExportPdfResult> {
   const safeTitle = sanitizeFileBaseName(title)
-
-  // Set document title so the OS print dialog pre-fills the filename
-  const prevTitle = document.title
-  document.title = safeTitle
-
-  const htmlDoc = `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>${escapeHtml(safeTitle)}</title>
-  <style>${PRINT_CSS}</style>
-</head>
-<body>${content}</body>
-</html>`
-
-  const iframe = document.createElement('iframe')
-  iframe.style.cssText =
-    'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;border:0;visibility:hidden'
-  document.body.appendChild(iframe)
-
-  const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
-  if (!iframeDoc) {
-    iframe.remove()
-    document.title = prevTitle
-    return
+  const host = buildPdfRenderContainer(content)
+  const root = host.querySelector('.pdf-export-root') as HTMLElement | null
+  if (!root) {
+    host.remove()
+    return 'cancelled'
   }
 
-  iframeDoc.open()
-  iframeDoc.write(htmlDoc)
-  iframeDoc.close()
+  try {
+    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf'),
+    ])
 
-  // Give the WebView a moment to lay out the content before printing
-  setTimeout(() => {
-    try {
-      iframe.contentWindow?.focus()
-      iframe.contentWindow?.print()
-    } catch {
-      // ignore – some environments block window.print()
+    const canvas = await html2canvas(root, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    })
+
+    const pdf = new jsPDF({
+      orientation: 'p',
+      unit: 'pt',
+      format: 'a4',
+      compress: true,
+    })
+
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const imageWidth = pageWidth
+    const imageHeight = (canvas.height * imageWidth) / canvas.width
+    const imageData = canvas.toDataURL('image/jpeg', 0.95)
+
+    let heightLeft = imageHeight
+    let position = 0
+    pdf.addImage(imageData, 'JPEG', 0, position, imageWidth, imageHeight, undefined, 'FAST')
+    heightLeft -= pageHeight
+
+    while (heightLeft > 0) {
+      position = heightLeft - imageHeight
+      pdf.addPage()
+      pdf.addImage(imageData, 'JPEG', 0, position, imageWidth, imageHeight, undefined, 'FAST')
+      heightLeft -= pageHeight
     }
 
-    // Restore original title and clean up the iframe
-    document.title = prevTitle
-    setTimeout(() => iframe.remove(), 3000)
-  }, 700)
+    const arrayBuffer = pdf.output('arraybuffer') as ArrayBuffer
+    const binary = arrayBufferToUint8Array(arrayBuffer)
+
+    if (isTauriRuntime()) {
+      try {
+        const [{ save }, { writeFile }] = await Promise.all([
+          import('@tauri-apps/plugin-dialog'),
+          import('@tauri-apps/plugin-fs'),
+        ])
+        const savePath = await save({
+          defaultPath: `${safeTitle}.pdf`,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        })
+        if (!savePath) return 'cancelled'
+        await writeFile(savePath, binary)
+        return 'saved'
+      } catch {
+        // fall through to browser download
+      }
+    }
+
+    browserDownload(new Blob([binary], { type: 'application/pdf' }), `${safeTitle}.pdf`)
+    return 'fallback'
+  } finally {
+    host.remove()
+  }
 }
