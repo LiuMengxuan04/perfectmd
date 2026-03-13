@@ -1732,7 +1732,6 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       const target = event.target as HTMLElement | null
       const select = target?.closest('[data-code-lang-select="true"]') as HTMLElement | null
       if (!select || !editor.contains(select)) return
-      event.preventDefault()
       event.stopPropagation()
       const htmlSelect = select as HTMLSelectElement
       window.setTimeout(() => htmlSelect.focus(), 0)

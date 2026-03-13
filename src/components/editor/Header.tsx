@@ -29,6 +29,7 @@ const FALLBACK_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
 const RELEASE_API_URL = 'https://api.github.com/repos/ssbsunshengbo/perfectmd/releases/latest'
 
 const normalizeVersion = (input: string) => input.replace(/^v/i, '').trim()
+const isSemanticVersion = (input: string) => /^\d+(\.\d+){1,3}$/.test(input)
 type ReleaseAsset = { name?: string; browser_download_url?: string }
 
 const getRuntimeClientInfo = () => {
@@ -413,12 +414,17 @@ export function Header() {
 
   const checkForUpdates = useCallback(() => {
     if (!mounted || !appVersion) return
+    const localVersion = normalizeVersion(appVersion)
+    if (!isSemanticVersion(localVersion)) return
     fetch(RELEASE_API_URL, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data?.tag_name || !data?.html_url) return
-        if (!isRemoteVersionNewer(String(data.tag_name), appVersion)) return
         const latestTag = String(data.tag_name)
+        const remoteVersion = normalizeVersion(latestTag)
+        if (!isSemanticVersion(remoteVersion)) return
+        if (remoteVersion === localVersion) return
+        if (!isRemoteVersionNewer(remoteVersion, localVersion)) return
         if (shownUpdateTagRef.current === latestTag) return
         const assets = Array.isArray(data.assets) ? data.assets : []
         const downloadUrl = chooseBestAssetUrl(assets, String(data.html_url))
@@ -567,7 +573,7 @@ export function Header() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem
                 onClick={() => setIsThemeDialogOpen(true)}
-                className="text-foreground data-[highlighted]:bg-accent/40 data-[highlighted]:text-foreground focus:bg-accent/40 focus:text-foreground"
+                className="text-black data-[highlighted]:bg-black data-[highlighted]:text-white focus:bg-black focus:text-white"
               >
                 模板与自定义 CSS
               </DropdownMenuItem>
