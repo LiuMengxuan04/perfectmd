@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { FileText, Save, Palette } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
 import {
@@ -27,7 +27,6 @@ const CUSTOM_THEME_KEY = 'perfectmd-custom-theme-css'
 const CUSTOM_THEME_STYLE_ID = 'perfectmd-custom-theme-style'
 const FALLBACK_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
 const RELEASE_API_URL = 'https://api.github.com/repos/ssbsunshengbo/perfectmd/releases/latest'
-const UPDATE_TOAST_KEY = 'perfectmd-last-update-toast-version'
 
 const normalizeVersion = (input: string) => input.replace(/^v/i, '').trim()
 
@@ -176,49 +175,92 @@ body {
 }
 `
 
-const FOREST_NOTE_TEMPLATE_CSS = `:root {
-  --background: #0f1d16;
-  --foreground: #e8f6ee;
-  --card: rgba(17, 42, 30, 0.72);
-  --card-foreground: #e8f6ee;
-  --border: rgba(113, 206, 155, 0.28);
-  --muted: rgba(46, 116, 84, 0.18);
-  --muted-foreground: #abdcc1;
-  --accent: rgba(111, 187, 127, 0.2);
-  --accent-foreground: #e5ffe9;
-  --primary: #71ce9b;
-  --primary-foreground: #0d2619;
-  --pmd-link-color: #9df3cc;
-  --pmd-code-bg: rgba(9, 29, 20, 0.95);
-  --pmd-code-fg: #d1ffea;
-  --pmd-code-border: rgba(113, 206, 155, 0.35);
-  --pmd-table-border: rgba(113, 206, 155, 0.35);
-  --pmd-table-header-bg: rgba(113, 206, 155, 0.2);
-  --pmd-formula-bg: rgba(137, 255, 193, 0.1);
-  --pmd-formula-fg: #d5ffe7;
-  --pmd-formula-border: rgba(113, 206, 155, 0.45);
+const SAKURA_SOFT_TEMPLATE_CSS = `:root {
+  --background: #fff6fa;
+  --foreground: #3b1f2d;
+  --card: #fff9fb;
+  --card-foreground: #3b1f2d;
+  --border: #f0c9dc;
+  --muted: #ffe8f2;
+  --muted-foreground: #8c5b72;
+  --accent: #ffd9ea;
+  --accent-foreground: #4d2236;
+  --primary: #d9488b;
+  --primary-foreground: #fff5fb;
+  --pmd-link-color: #b53371;
+  --pmd-code-bg: #fff0f7;
+  --pmd-code-fg: #4a2d3d;
+  --pmd-code-border: #efb8d5;
+  --pmd-table-border: #efb8d5;
+  --pmd-table-header-bg: #ffe1f0;
+  --pmd-formula-bg: #ffeef7;
+  --pmd-formula-fg: #5c2f45;
+  --pmd-formula-border: #efb8d5;
 }
 body {
   background:
-    radial-gradient(circle at 8% 0%, rgba(140, 255, 190, 0.2), transparent 40%),
-    radial-gradient(circle at 90% 8%, rgba(95, 194, 141, 0.17), transparent 45%),
-    #0c1712;
+    radial-gradient(circle at 10% 0%, rgba(255, 170, 208, 0.35), transparent 42%),
+    radial-gradient(circle at 90% 0%, rgba(255, 214, 235, 0.45), transparent 38%),
+    #fff7fb;
 }
 .prose-editor p {
-  border: 1px solid rgba(113, 206, 155, 0.22);
-  background: rgba(130, 236, 173, 0.06);
-  border-radius: 14px;
+  border: 1px solid rgba(217, 72, 139, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 236, 246, 0.6);
   padding: 0.45rem 0.75rem;
 }
 .prose-editor h1, .prose-editor h2, .prose-editor h3 {
-  color: #b9ffd8;
-  border-bottom: 1px dashed rgba(185, 255, 216, 0.38);
-  padding-bottom: 0.1rem;
+  color: #b53371;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+`
+
+const TERMINAL_GREEN_TEMPLATE_CSS = `:root {
+  --background: #050a08;
+  --foreground: #a8ffb5;
+  --card: rgba(8, 20, 14, 0.82);
+  --card-foreground: #a8ffb5;
+  --border: rgba(116, 255, 140, 0.34);
+  --muted: rgba(43, 110, 57, 0.2);
+  --muted-foreground: #8fd69a;
+  --accent: rgba(116, 255, 140, 0.2);
+  --accent-foreground: #d6ffdc;
+  --primary: #67f47b;
+  --primary-foreground: #041007;
+  --pmd-link-color: #8dff9f;
+  --pmd-code-bg: #020806;
+  --pmd-code-fg: #b9ffc4;
+  --pmd-code-border: rgba(116, 255, 140, 0.45);
+  --pmd-table-border: rgba(116, 255, 140, 0.4);
+  --pmd-table-header-bg: rgba(77, 185, 97, 0.24);
+  --pmd-formula-bg: rgba(103, 244, 123, 0.12);
+  --pmd-formula-fg: #baffc3;
+  --pmd-formula-border: rgba(103, 244, 123, 0.5);
+}
+body {
+  background:
+    repeating-linear-gradient(0deg, rgba(40, 120, 59, 0.08) 0 1px, transparent 1px 3px),
+    #020705;
+}
+.prose-editor {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+}
+.prose-editor p {
+  border-left: 2px solid rgba(116, 255, 140, 0.35);
+  background: rgba(11, 34, 20, 0.45);
+  border-radius: 0 8px 8px 0;
+  padding: 0.4rem 0.7rem;
+}
+.prose-editor h1, .prose-editor h2, .prose-editor h3 {
+  color: #8dff9f;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 `
 
 export function Header() {
   const { currentDocument, updateCurrentTitle, saveDocument } = useEditorStore()
+  const shownUpdateTagRef = useRef<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [appVersion, setAppVersion] = useState(`v${normalizeVersion(FALLBACK_VERSION)}`)
@@ -226,15 +268,17 @@ export function Header() {
     typeof window !== 'undefined' ? localStorage.getItem(CUSTOM_THEME_KEY) || '' : ''
   )
   const [isThemeDialogOpen, setIsThemeDialogOpen] = useState(false)
-  const selectedTemplate: 'none' | 'aurora' | 'paper' | 'cyber' | 'forest' =
+  const selectedTemplate: 'none' | 'aurora' | 'paper' | 'cyber' | 'sakura' | 'terminal' =
     customCssDraft.trim() === AURORA_TEMPLATE_CSS.trim()
       ? 'aurora'
       : customCssDraft.trim() === PAPER_SERIF_TEMPLATE_CSS.trim()
         ? 'paper'
         : customCssDraft.trim() === CYBER_GRID_TEMPLATE_CSS.trim()
           ? 'cyber'
-          : customCssDraft.trim() === FOREST_NOTE_TEMPLATE_CSS.trim()
-            ? 'forest'
+          : customCssDraft.trim() === SAKURA_SOFT_TEMPLATE_CSS.trim()
+            ? 'sakura'
+            : customCssDraft.trim() === TERMINAL_GREEN_TEMPLATE_CSS.trim()
+              ? 'terminal'
             : 'none'
 
   const applyCustomThemeCss = useCallback((cssText: string) => {
@@ -311,11 +355,10 @@ export function Header() {
         if (!data?.tag_name || !data?.html_url) return
         if (!isRemoteVersionNewer(String(data.tag_name), appVersion)) return
         const latestTag = String(data.tag_name)
-        const lastPrompted = localStorage.getItem(UPDATE_TOAST_KEY)
-        if (lastPrompted === latestTag) return
+        if (shownUpdateTagRef.current === latestTag) return
         const assets = Array.isArray(data.assets) ? data.assets : []
         const downloadUrl = String(assets[0]?.browser_download_url || data.html_url)
-        localStorage.setItem(UPDATE_TOAST_KEY, latestTag)
+        shownUpdateTagRef.current = latestTag
         toast.info(`发现新版本 ${latestTag}`, {
           action: {
             label: '下载更新',
@@ -388,7 +431,7 @@ export function Header() {
     toast.success('Custom theme CSS reset')
   }
 
-  const handleApplyTemplate = (template: 'none' | 'aurora' | 'paper' | 'cyber' | 'forest') => {
+  const handleApplyTemplate = (template: 'none' | 'aurora' | 'paper' | 'cyber' | 'sakura' | 'terminal') => {
     if (template === 'none') {
       setCustomCssDraft('')
       localStorage.removeItem(CUSTOM_THEME_KEY)
@@ -396,11 +439,12 @@ export function Header() {
       toast.success('Template cleared')
       return
     }
-    const templates: Record<'aurora' | 'paper' | 'cyber' | 'forest', { css: string; name: string }> = {
+    const templates: Record<'aurora' | 'paper' | 'cyber' | 'sakura' | 'terminal', { css: string; name: string }> = {
       aurora: { css: AURORA_TEMPLATE_CSS, name: 'Aurora' },
       paper: { css: PAPER_SERIF_TEMPLATE_CSS, name: 'Paper Serif' },
       cyber: { css: CYBER_GRID_TEMPLATE_CSS, name: 'Cyber Grid' },
-      forest: { css: FOREST_NOTE_TEMPLATE_CSS, name: 'Forest Note' },
+      sakura: { css: SAKURA_SOFT_TEMPLATE_CSS, name: 'Sakura Soft' },
+      terminal: { css: TERMINAL_GREEN_TEMPLATE_CSS, name: 'Terminal Green' },
     }
     const selected = templates[template]
     if (!selected) return
@@ -509,12 +553,21 @@ export function Header() {
             </button>
             <button
               type="button"
-              onClick={() => handleApplyTemplate('forest')}
-              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'forest' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+              onClick={() => handleApplyTemplate('sakura')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'sakura' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
             >
-              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#0d1a14 0%,#173426 100%)' }} />
-              <div className="mt-2 text-sm font-medium">Forest Note</div>
-              <div className="text-xs text-muted-foreground">Natural green / elegant reading</div>
+              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#fff0f6 0%,#ffd5e9 100%)' }} />
+              <div className="mt-2 text-sm font-medium">Sakura Soft</div>
+              <div className="text-xs text-muted-foreground">Gentle pastel + editorial card look</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyTemplate('terminal')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'terminal' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+            >
+              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#030a06 0%,#0b2014 100%)' }} />
+              <div className="mt-2 text-sm font-medium">Terminal Green</div>
+              <div className="text-xs text-muted-foreground">Retro console / mono typography vibe</div>
             </button>
             <button
               type="button"

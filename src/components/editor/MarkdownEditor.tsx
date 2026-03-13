@@ -639,8 +639,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
   const clearColorTypingState = useCallback(() => {
     // Reset color/highlight typing state for subsequent input.
-    const isDarkMode = document.documentElement.classList.contains('dark')
-    const defaultColor = isDarkMode ? '#ffffff' : '#000000'
+    const editorColor = editorRef.current
+      ? getComputedStyle(editorRef.current).color
+      : 'inherit'
+    const defaultColor = editorColor || 'inherit'
     document.execCommand('foreColor', false, defaultColor)
     document.execCommand('hiliteColor', false, 'transparent')
   }, [])
@@ -1728,7 +1730,15 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       const element = event.target as HTMLElement | null
       const codeEl = element?.closest('.code-block-wrapper pre code') as HTMLElement | null
       if (!codeEl) return
+      const nextTarget = event.relatedTarget as HTMLElement | null
       const wrapper = codeEl.closest('.code-block-wrapper')
+      if (
+        nextTarget &&
+        wrapper &&
+        (wrapper.contains(nextTarget) || nextTarget.closest('[data-code-lang-select="true"]'))
+      ) {
+        return
+      }
       const langSelect = wrapper?.querySelector('[data-code-lang-select="true"]') as HTMLSelectElement | null
       const lang = (langSelect?.value || wrapper?.getAttribute('data-code-language') || 'plaintext').toLowerCase()
       applySyntaxHighlight(codeEl, lang, true)
@@ -1760,12 +1770,14 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     editor.addEventListener('mousedown', handleCodeMouseDown)
     editor.addEventListener('mousedown', handleLangMouseDown)
     editor.addEventListener('change', handleLangChange)
+    editor.addEventListener('input', handleLangChange)
     return () => {
       editor.removeEventListener('focusin', handleFocusIn)
       editor.removeEventListener('focusout', handleFocusOut)
       editor.removeEventListener('mousedown', handleCodeMouseDown)
       editor.removeEventListener('mousedown', handleLangMouseDown)
       editor.removeEventListener('change', handleLangChange)
+      editor.removeEventListener('input', handleLangChange)
     }
   }, [applySyntaxHighlight, handleInput, normalizeCodeBlockToPlainText])
 
