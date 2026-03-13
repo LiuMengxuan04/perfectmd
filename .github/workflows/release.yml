@@ -57,8 +57,8 @@ jobs:
 
           const cargoBefore = fs.readFileSync(cargoPath, 'utf8');
           const cargoAfter = cargoBefore.replace(
-            /^version\\s*=\\s*\"[^\"]+\"/m,
-            `version = \"${version}\"`
+            /^version\s*=\s*"[^"]+"/m,
+            `version = "${version}"`
           );
           if (cargoBefore === cargoAfter) {
             throw new Error('Failed to update version in src-tauri/Cargo.toml');
