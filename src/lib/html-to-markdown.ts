@@ -33,6 +33,12 @@ function normalizeCodeText(text: string): string {
   return text.replace(/\r\n?/g, '\n').replace(/\n$/, '')
 }
 
+function normalizeInlineLatex(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  return trimmed.replace(/\$/g, '\\$')
+}
+
 function detectCodeLanguage(source: Element): string {
   const wrapper = source.closest('.code-block-wrapper') as HTMLElement | null
   const dataLang =
@@ -105,6 +111,17 @@ function processNode(node: Node, inheritedStyle: StyleInfo = {}): string {
     const codeText = normalizeCodeText(code?.textContent || '')
     const lang = detectCodeLanguage(code || element)
     return `\n\`\`\`${lang}\n${codeText}\n\`\`\`\n\n`
+  }
+
+  // Preserve formulas as standard inline math for Markdown editors.
+  if (element.classList.contains('formula-inline')) {
+    const latex = normalizeInlineLatex(
+      element.getAttribute('data-latex') ||
+      (element as HTMLElement).dataset?.latex ||
+      ''
+    )
+    if (latex) return `$${latex}$`
+    return ''
   }
 
   const style: StyleInfo = { ...inheritedStyle }

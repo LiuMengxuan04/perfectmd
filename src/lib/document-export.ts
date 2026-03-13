@@ -79,21 +79,50 @@ export async function saveAsMarkdown(
 const PDF_RENDER_STYLE = `
   .pdf-export-root {
     box-sizing: border-box;
-    width: 794px;
+    width: 680px;
     background: #fff;
-    color: #111;
-    padding: 36px 40px;
-    font-size: 15px;
-    line-height: 1.7;
+    color: #1c2430;
+    padding: 0;
+    font-size: 13.5px;
+    line-height: 1.62;
     font-family:
       'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Microsoft JhengHei',
       'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei',
       'Helvetica Neue', Arial, sans-serif;
   }
+  .pdf-export-root * {
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+  .pdf-export-root p {
+    margin: 0 0 0.72em;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    color: #1c2430 !important;
+  }
   .pdf-export-root h1, .pdf-export-root h2, .pdf-export-root h3,
   .pdf-export-root h4, .pdf-export-root h5, .pdf-export-root h6 {
-    color: #111;
-    margin: 0.8em 0 0.45em;
+    color: #16212d !important;
+    background: transparent !important;
+    border: 0 !important;
+    padding: 0 !important;
+    margin: 1.05em 0 0.42em;
+    line-height: 1.35;
+  }
+  .pdf-export-root h1 { font-size: 2.02em; }
+  .pdf-export-root h2 { font-size: 1.62em; }
+  .pdf-export-root h3 { font-size: 1.34em; }
+  .pdf-export-root h4 { font-size: 1.16em; }
+  .pdf-export-root h5 { font-size: 1.05em; }
+  .pdf-export-root h6 { font-size: 1em; }
+  .pdf-export-root ul, .pdf-export-root ol {
+    margin: 0.38em 0 0.66em;
+    padding-left: 1.4em;
+  }
+  .pdf-export-root li {
+    margin: 0.18em 0;
   }
   .pdf-export-root pre {
     background: #f5f5f5;
@@ -104,16 +133,43 @@ const PDF_RENDER_STYLE = `
     white-space: pre-wrap;
     word-break: break-word;
     font-family: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
-    font-size: 13px;
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 0.55em 0 0.78em;
   }
   .pdf-export-root code {
     font-family: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
+    font-size: 0.95em;
   }
-  .pdf-export-root table { border-collapse: collapse; width: 100%; }
+  .pdf-export-root blockquote {
+    margin: 0.6em 0 0.8em;
+    border-left: 3px solid #c7d0d9;
+    padding: 0.2em 0 0.2em 0.8em;
+    color: #4c5a6a;
+    background: #f8fafc;
+  }
+  .pdf-export-root table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.65em 0 0.95em;
+  }
   .pdf-export-root th, .pdf-export-root td {
     border: 1px solid #ccc;
     padding: 6px 8px;
     text-align: left;
+  }
+  .pdf-export-root th {
+    background: #eef2f6 !important;
+  }
+  .pdf-export-root hr {
+    border: none;
+    border-top: 1px solid #d5dee8;
+    margin: 1.2em 0;
+  }
+  .pdf-export-root .formula-inline {
+    border: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
   }
   .pdf-export-root .code-controls,
   .pdf-export-root .code-copy-btn,
@@ -181,20 +237,22 @@ export async function exportAsPdf(
 
     const pageWidth = pdf.internal.pageSize.getWidth()
     const pageHeight = pdf.internal.pageSize.getHeight()
-    const imageWidth = pageWidth
+    const margin = 42
+    const usableWidth = pageWidth - margin * 2
+    const usableHeight = pageHeight - margin * 2
+    const imageWidth = usableWidth
     const imageHeight = (canvas.height * imageWidth) / canvas.width
-    const imageData = canvas.toDataURL('image/jpeg', 0.95)
+    const imageData = canvas.toDataURL('image/png')
 
-    let heightLeft = imageHeight
-    let position = 0
-    pdf.addImage(imageData, 'JPEG', 0, position, imageWidth, imageHeight, undefined, 'FAST')
-    heightLeft -= pageHeight
+    let heightLeft = imageHeight - usableHeight
+    let position = margin
+    pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight, undefined, 'FAST')
 
     while (heightLeft > 0) {
-      position = heightLeft - imageHeight
+      position = margin - (imageHeight - usableHeight - heightLeft)
       pdf.addPage()
-      pdf.addImage(imageData, 'JPEG', 0, position, imageWidth, imageHeight, undefined, 'FAST')
-      heightLeft -= pageHeight
+      pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight, undefined, 'FAST')
+      heightLeft -= usableHeight
     }
 
     const arrayBuffer = pdf.output('arraybuffer') as ArrayBuffer

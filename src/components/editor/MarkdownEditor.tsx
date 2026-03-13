@@ -2467,7 +2467,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           background-color: var(--pmd-code-bg);
           color: var(--pmd-code-fg);
           border: 1px solid var(--pmd-code-border);
-          padding: 1em 1em 2.6em;
+          padding: 1em;
           border-radius: 6px;
           overflow-x: auto;
           white-space: pre-wrap;
@@ -2487,24 +2487,29 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
         .prose-editor .code-controls {
           position: absolute;
-          right: 0.65rem;
-          bottom: 0.52rem;
+          right: 0.75rem;
+          top: -0.55rem;
           display: inline-flex;
           align-items: center;
-          gap: 0.4rem;
+          gap: 0.35rem;
+          padding: 0.22rem 0.28rem;
+          border-radius: 999px;
+          border: 1px solid color-mix(in oklch, var(--pmd-code-border) 86%, transparent);
+          background: color-mix(in oklch, var(--background) 92%, transparent);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.16);
           z-index: 2;
           pointer-events: auto;
         }
 
         .prose-editor .code-copy-btn {
           position: static;
-          height: 1.7rem;
-          min-width: 1.7rem;
-          border-radius: 0.4rem;
+          height: 1.52rem;
+          min-width: 1.52rem;
+          border-radius: 999px;
           border: 1px solid var(--pmd-code-border);
-          background: color-mix(in oklch, var(--background) 90%, transparent);
+          background: color-mix(in oklch, var(--background) 96%, transparent);
           color: var(--muted-foreground);
-          font-size: 0.8rem;
+          font-size: 0.78rem;
           line-height: 1;
           display: inline-flex;
           align-items: center;
@@ -2518,14 +2523,15 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
         .prose-editor .code-lang-select {
           position: static;
-          height: 1.8rem;
-          max-width: 9rem;
+          height: 1.55rem;
+          max-width: 8.6rem;
           border: 1px solid var(--pmd-code-border);
-          border-radius: 0.4rem;
-          background: color-mix(in oklch, var(--background) 88%, transparent);
+          border-radius: 999px;
+          background: color-mix(in oklch, var(--background) 95%, transparent);
           color: var(--muted-foreground);
           font-size: 11px;
-          padding: 0 0.35rem;
+          font-weight: 500;
+          padding: 0 0.6rem;
           outline: none;
           cursor: pointer;
         }
@@ -2535,10 +2541,16 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           border-color: var(--foreground);
         }
 
+        .prose-editor .code-lang-select:hover,
+        .prose-editor .code-lang-select:focus {
+          color: var(--foreground);
+          border-color: var(--foreground);
+        }
+
         .prose-editor .code-copy-toast {
           position: absolute;
-          right: 9.8rem;
-          bottom: 0.7rem;
+          right: 0.82rem;
+          top: 1.48rem;
           opacity: 0;
           transform: translateY(4px);
           pointer-events: none;

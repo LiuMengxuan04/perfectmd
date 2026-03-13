@@ -241,86 +241,84 @@ body {
 }
 `
 
-const SAKURA_SOFT_TEMPLATE_CSS = `:root {
-  --background: #fff6fa;
-  --foreground: #3b1f2d;
-  --card: #fff9fb;
-  --card-foreground: #3b1f2d;
-  --border: #f0c9dc;
-  --muted: #ffe8f2;
-  --muted-foreground: #8c5b72;
-  --accent: #ffd9ea;
-  --accent-foreground: #4d2236;
-  --primary: #d9488b;
-  --primary-foreground: #fff5fb;
-  --pmd-link-color: #b53371;
-  --pmd-code-bg: #fff0f7;
-  --pmd-code-fg: #4a2d3d;
-  --pmd-code-border: #efb8d5;
-  --pmd-table-border: #efb8d5;
-  --pmd-table-header-bg: #ffe1f0;
-  --pmd-formula-bg: #ffeef7;
-  --pmd-formula-fg: #5c2f45;
-  --pmd-formula-border: #efb8d5;
+const NOIR_GLASS_TEMPLATE_CSS = `:root {
+  --background: #0b0e14;
+  --foreground: #e7ecf4;
+  --card: rgba(18, 24, 38, 0.8);
+  --card-foreground: #e7ecf4;
+  --border: rgba(146, 163, 190, 0.26);
+  --muted: rgba(120, 141, 173, 0.12);
+  --muted-foreground: #aec0dd;
+  --accent: rgba(99, 102, 241, 0.2);
+  --accent-foreground: #e5e7ff;
+  --primary: #8b9bff;
+  --primary-foreground: #0e1220;
+  --pmd-link-color: #8ec5ff;
+  --pmd-code-bg: #121a2a;
+  --pmd-code-fg: #d7e2ff;
+  --pmd-code-border: rgba(151, 170, 211, 0.35);
+  --pmd-table-border: rgba(151, 170, 211, 0.35);
+  --pmd-table-header-bg: rgba(84, 103, 151, 0.26);
+  --pmd-formula-bg: rgba(120, 144, 206, 0.12);
+  --pmd-formula-fg: #d5e3ff;
+  --pmd-formula-border: rgba(146, 167, 222, 0.44);
 }
 body {
   background:
-    radial-gradient(circle at 10% 0%, rgba(255, 170, 208, 0.35), transparent 42%),
-    radial-gradient(circle at 90% 0%, rgba(255, 214, 235, 0.45), transparent 38%),
-    #fff7fb;
+    radial-gradient(circle at 8% -20%, rgba(114, 142, 255, 0.25), transparent 44%),
+    radial-gradient(circle at 92% 0%, rgba(76, 105, 180, 0.18), transparent 40%),
+    linear-gradient(180deg, #090c13 0%, #101826 100%);
 }
 .prose-editor p {
-  border: 1px solid rgba(217, 72, 139, 0.2);
+  border: 1px solid rgba(146, 163, 190, 0.2);
   border-radius: 12px;
-  background: rgba(255, 236, 246, 0.6);
-  padding: 0.45rem 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(2px);
+  padding: 0.48rem 0.75rem;
 }
 .prose-editor h1, .prose-editor h2, .prose-editor h3 {
-  color: #b53371;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.012em;
+  text-shadow: 0 8px 26px rgba(124, 148, 255, 0.2);
 }
 `
 
-const TERMINAL_GREEN_TEMPLATE_CSS = `:root {
-  --background: #050a08;
-  --foreground: #a8ffb5;
-  --card: rgba(8, 20, 14, 0.82);
-  --card-foreground: #a8ffb5;
-  --border: rgba(116, 255, 140, 0.34);
-  --muted: rgba(43, 110, 57, 0.2);
-  --muted-foreground: #8fd69a;
-  --accent: rgba(116, 255, 140, 0.2);
-  --accent-foreground: #d6ffdc;
-  --primary: #67f47b;
-  --primary-foreground: #041007;
-  --pmd-link-color: #8dff9f;
-  --pmd-code-bg: #020806;
-  --pmd-code-fg: #b9ffc4;
-  --pmd-code-border: rgba(116, 255, 140, 0.45);
-  --pmd-table-border: rgba(116, 255, 140, 0.4);
-  --pmd-table-header-bg: rgba(77, 185, 97, 0.24);
-  --pmd-formula-bg: rgba(103, 244, 123, 0.12);
-  --pmd-formula-fg: #baffc3;
-  --pmd-formula-border: rgba(103, 244, 123, 0.5);
+const OCEAN_PASTEL_TEMPLATE_CSS = `:root {
+  --background: #eef7fb;
+  --foreground: #153447;
+  --card: rgba(255, 255, 255, 0.84);
+  --card-foreground: #153447;
+  --border: #bcd9e6;
+  --muted: #dbedf4;
+  --muted-foreground: #4e7282;
+  --accent: #d2eefe;
+  --accent-foreground: #20485d;
+  --primary: #2e8fb8;
+  --primary-foreground: #ecf8ff;
+  --pmd-link-color: #116d9b;
+  --pmd-code-bg: #e8f6fb;
+  --pmd-code-fg: #1c3f51;
+  --pmd-code-border: #a7cfdf;
+  --pmd-table-border: #a7cfdf;
+  --pmd-table-header-bg: #d3edf7;
+  --pmd-formula-bg: #e0f2fa;
+  --pmd-formula-fg: #1d4258;
+  --pmd-formula-border: #9fc7d9;
 }
 body {
   background:
-    repeating-linear-gradient(0deg, rgba(40, 120, 59, 0.08) 0 1px, transparent 1px 3px),
-    #020705;
-}
-.prose-editor {
-  font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+    radial-gradient(circle at 12% -16%, rgba(163, 219, 246, 0.65), transparent 42%),
+    radial-gradient(circle at 95% 0%, rgba(211, 236, 249, 0.75), transparent 38%),
+    #eff8fc;
 }
 .prose-editor p {
-  border-left: 2px solid rgba(116, 255, 140, 0.35);
-  background: rgba(11, 34, 20, 0.45);
-  border-radius: 0 8px 8px 0;
-  padding: 0.4rem 0.7rem;
+  border-left: 4px solid rgba(46, 143, 184, 0.42);
+  border-radius: 0 12px 12px 0;
+  background: rgba(255, 255, 255, 0.65);
+  padding: 0.48rem 0.8rem;
 }
 .prose-editor h1, .prose-editor h2, .prose-editor h3 {
-  color: #8dff9f;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: #16577a;
+  letter-spacing: 0.008em;
 }
 `
 
@@ -334,17 +332,17 @@ export function Header() {
     typeof window !== 'undefined' ? localStorage.getItem(CUSTOM_THEME_KEY) || '' : ''
   )
   const [isThemeDialogOpen, setIsThemeDialogOpen] = useState(false)
-  const selectedTemplate: 'none' | 'aurora' | 'paper' | 'cyber' | 'sakura' | 'terminal' =
+  const selectedTemplate: 'none' | 'aurora' | 'paper' | 'cyber' | 'noir' | 'ocean' =
     customCssDraft.trim() === AURORA_TEMPLATE_CSS.trim()
       ? 'aurora'
       : customCssDraft.trim() === PAPER_SERIF_TEMPLATE_CSS.trim()
         ? 'paper'
         : customCssDraft.trim() === CYBER_GRID_TEMPLATE_CSS.trim()
           ? 'cyber'
-          : customCssDraft.trim() === SAKURA_SOFT_TEMPLATE_CSS.trim()
-            ? 'sakura'
-            : customCssDraft.trim() === TERMINAL_GREEN_TEMPLATE_CSS.trim()
-              ? 'terminal'
+          : customCssDraft.trim() === NOIR_GLASS_TEMPLATE_CSS.trim()
+            ? 'noir'
+            : customCssDraft.trim() === OCEAN_PASTEL_TEMPLATE_CSS.trim()
+              ? 'ocean'
             : 'none'
 
   const applyCustomThemeCss = useCallback((cssText: string) => {
@@ -518,7 +516,7 @@ export function Header() {
     toast.success('Custom theme CSS reset')
   }
 
-  const handleApplyTemplate = (template: 'none' | 'aurora' | 'paper' | 'cyber' | 'sakura' | 'terminal') => {
+  const handleApplyTemplate = (template: 'none' | 'aurora' | 'paper' | 'cyber' | 'noir' | 'ocean') => {
     if (template === 'none') {
       setCustomCssDraft('')
       localStorage.removeItem(CUSTOM_THEME_KEY)
@@ -526,12 +524,12 @@ export function Header() {
       toast.success('Template cleared')
       return
     }
-    const templates: Record<'aurora' | 'paper' | 'cyber' | 'sakura' | 'terminal', { css: string; name: string }> = {
+    const templates: Record<'aurora' | 'paper' | 'cyber' | 'noir' | 'ocean', { css: string; name: string }> = {
       aurora: { css: AURORA_TEMPLATE_CSS, name: 'Aurora' },
       paper: { css: PAPER_SERIF_TEMPLATE_CSS, name: 'Paper Serif' },
       cyber: { css: CYBER_GRID_TEMPLATE_CSS, name: 'Cyber Grid' },
-      sakura: { css: SAKURA_SOFT_TEMPLATE_CSS, name: 'Sakura Soft' },
-      terminal: { css: TERMINAL_GREEN_TEMPLATE_CSS, name: 'Terminal Green' },
+      noir: { css: NOIR_GLASS_TEMPLATE_CSS, name: 'Noir Glass' },
+      ocean: { css: OCEAN_PASTEL_TEMPLATE_CSS, name: 'Ocean Pastel' },
     }
     const selected = templates[template]
     if (!selected) return
@@ -663,21 +661,21 @@ export function Header() {
             </button>
             <button
               type="button"
-              onClick={() => handleApplyTemplate('sakura')}
-              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'sakura' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+              onClick={() => handleApplyTemplate('noir')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'noir' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
             >
-              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#fff0f6 0%,#ffd5e9 100%)' }} />
-              <div className="mt-2 text-sm font-medium">Sakura Soft</div>
-              <div className="text-xs text-muted-foreground">Gentle pastel + editorial card look</div>
+              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#0b0f18 0%,#1a2438 100%)' }} />
+              <div className="mt-2 text-sm font-medium">Noir Glass</div>
+              <div className="text-xs text-muted-foreground">Deep blue-black + glassy cards</div>
             </button>
             <button
               type="button"
-              onClick={() => handleApplyTemplate('terminal')}
-              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'terminal' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+              onClick={() => handleApplyTemplate('ocean')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'ocean' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
             >
-              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#030a06 0%,#0b2014 100%)' }} />
-              <div className="mt-2 text-sm font-medium">Terminal Green</div>
-              <div className="text-xs text-muted-foreground">Retro console / mono typography vibe</div>
+              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#ddf3fb 0%,#f6fbfe 100%)' }} />
+              <div className="mt-2 text-sm font-medium">Ocean Pastel</div>
+              <div className="text-xs text-muted-foreground">Soft blue paper + calm reading mood</div>
             </button>
             <button
               type="button"
