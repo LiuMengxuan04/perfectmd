@@ -73,132 +73,187 @@ export async function saveAsMarkdown(
 }
 
 // ---------------------------------------------------------------------------
-// Export PDF
+// Export PDF (text-based print flow)
 // ---------------------------------------------------------------------------
 
-const PDF_RENDER_STYLE = `
-  .pdf-export-root {
-    box-sizing: border-box;
-    width: 680px;
-    background: #fff;
-    color: #1c2430;
-    padding: 0;
-    font-size: 13.5px;
-    line-height: 1.62;
-    font-family:
-      'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Microsoft JhengHei',
-      'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei',
-      'Helvetica Neue', Arial, sans-serif;
-  }
-  .pdf-export-root * {
-    text-shadow: none !important;
-    box-shadow: none !important;
-  }
-  .pdf-export-root p {
-    margin: 0 0 0.72em;
-    padding: 0 !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    color: #1c2430 !important;
-  }
-  .pdf-export-root h1, .pdf-export-root h2, .pdf-export-root h3,
-  .pdf-export-root h4, .pdf-export-root h5, .pdf-export-root h6 {
-    color: #16212d !important;
-    background: transparent !important;
-    border: 0 !important;
-    padding: 0 !important;
-    margin: 1.05em 0 0.42em;
-    line-height: 1.35;
-  }
-  .pdf-export-root h1 { font-size: 2.02em; }
-  .pdf-export-root h2 { font-size: 1.62em; }
-  .pdf-export-root h3 { font-size: 1.34em; }
-  .pdf-export-root h4 { font-size: 1.16em; }
-  .pdf-export-root h5 { font-size: 1.05em; }
-  .pdf-export-root h6 { font-size: 1em; }
-  .pdf-export-root ul, .pdf-export-root ol {
-    margin: 0.38em 0 0.66em;
-    padding-left: 1.4em;
-  }
-  .pdf-export-root li {
-    margin: 0.18em 0;
-  }
-  .pdf-export-root pre {
-    background: #f5f5f5;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 10px 12px;
-    overflow: hidden;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-family: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
-    font-size: 12px;
-    line-height: 1.5;
-    margin: 0.55em 0 0.78em;
-  }
-  .pdf-export-root code {
-    font-family: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
-    font-size: 0.95em;
-  }
-  .pdf-export-root blockquote {
-    margin: 0.6em 0 0.8em;
-    border-left: 3px solid #c7d0d9;
-    padding: 0.2em 0 0.2em 0.8em;
-    color: #4c5a6a;
-    background: #f8fafc;
-  }
-  .pdf-export-root table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 0.65em 0 0.95em;
-  }
-  .pdf-export-root th, .pdf-export-root td {
-    border: 1px solid #ccc;
-    padding: 6px 8px;
-    text-align: left;
-  }
-  .pdf-export-root th {
-    background: #eef2f6 !important;
-  }
-  .pdf-export-root hr {
-    border: none;
-    border-top: 1px solid #d5dee8;
-    margin: 1.2em 0;
-  }
-  .pdf-export-root .formula-inline {
-    border: 0 !important;
-    background: transparent !important;
-    padding: 0 !important;
-  }
-  .pdf-export-root .code-controls,
-  .pdf-export-root .code-copy-btn,
-  .pdf-export-root .code-copy-toast,
-  .pdf-export-root [data-code-lang-select],
-  .pdf-export-root [contenteditable='false'] {
-    display: none !important;
-  }
-`
+const PRINT_CONTAINER_ID = 'perfectmd-print-root'
+const PRINT_STYLE_ID = 'perfectmd-print-style'
 
-function buildPdfRenderContainer(content: string): HTMLElement {
-  const host = document.createElement('div')
-  host.style.cssText = 'position:fixed;left:-100000px;top:0;pointer-events:none;opacity:0;z-index:-1;'
-
-  const style = document.createElement('style')
-  style.textContent = PDF_RENDER_STYLE
-  host.appendChild(style)
-
-  const root = document.createElement('div')
-  root.className = 'pdf-export-root'
-  root.innerHTML = content
-  host.appendChild(root)
-
-  document.body.appendChild(host)
-  return host
+const PRINT_CSS = `
+@page {
+  size: A4;
+  margin: 18mm 15mm 18mm 15mm;
 }
 
-function arrayBufferToUint8Array(buffer: ArrayBuffer): Uint8Array {
-  return new Uint8Array(buffer)
+body.pmd-printing > *:not(#${PRINT_CONTAINER_ID}) {
+  display: none !important;
+}
+
+body.pmd-printing {
+  margin: 0 !important;
+  background: #fff !important;
+}
+
+#${PRINT_CONTAINER_ID} {
+  display: block !important;
+  color: #1e2733 !important;
+  font-size: 13.5px !important;
+  line-height: 1.68 !important;
+  font-family:
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Microsoft JhengHei',
+    'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei',
+    'Helvetica Neue', Arial, sans-serif !important;
+}
+
+#${PRINT_CONTAINER_ID} * {
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+#${PRINT_CONTAINER_ID} p {
+  margin: 0 0 0.72em !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #1e2733 !important;
+}
+
+#${PRINT_CONTAINER_ID} h1,
+#${PRINT_CONTAINER_ID} h2,
+#${PRINT_CONTAINER_ID} h3,
+#${PRINT_CONTAINER_ID} h4,
+#${PRINT_CONTAINER_ID} h5,
+#${PRINT_CONTAINER_ID} h6 {
+  margin: 1.05em 0 0.42em !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #132031 !important;
+  line-height: 1.34 !important;
+  background: transparent !important;
+}
+
+#${PRINT_CONTAINER_ID} h1 { font-size: 2.0em !important; }
+#${PRINT_CONTAINER_ID} h2 { font-size: 1.62em !important; }
+#${PRINT_CONTAINER_ID} h3 { font-size: 1.33em !important; }
+#${PRINT_CONTAINER_ID} h4 { font-size: 1.15em !important; }
+#${PRINT_CONTAINER_ID} h5 { font-size: 1.04em !important; }
+#${PRINT_CONTAINER_ID} h6 { font-size: 1em !important; }
+
+#${PRINT_CONTAINER_ID} ul,
+#${PRINT_CONTAINER_ID} ol {
+  margin: 0.35em 0 0.72em !important;
+  padding-left: 1.45em !important;
+}
+
+#${PRINT_CONTAINER_ID} li {
+  margin: 0.2em 0 !important;
+}
+
+#${PRINT_CONTAINER_ID} pre {
+  margin: 0.58em 0 0.9em !important;
+  padding: 0.62em 0.72em !important;
+  border: 1px solid #d3d9e0 !important;
+  border-radius: 6px !important;
+  background: #f8fafc !important;
+  color: #1f2937 !important;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  page-break-inside: avoid !important;
+}
+
+#${PRINT_CONTAINER_ID} code {
+  font-family: ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace !important;
+  font-size: 0.95em !important;
+}
+
+#${PRINT_CONTAINER_ID} blockquote {
+  margin: 0.62em 0 0.86em !important;
+  padding: 0.22em 0 0.22em 0.8em !important;
+  border-left: 3px solid #c5cfda !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+}
+
+#${PRINT_CONTAINER_ID} table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 0.65em 0 0.95em !important;
+  table-layout: fixed !important;
+  page-break-inside: avoid !important;
+}
+
+#${PRINT_CONTAINER_ID} th,
+#${PRINT_CONTAINER_ID} td {
+  border: 1px solid #cfd6de !important;
+  padding: 6px 8px !important;
+  text-align: left !important;
+  vertical-align: top !important;
+  overflow-wrap: anywhere !important;
+}
+
+#${PRINT_CONTAINER_ID} th {
+  background: #eef2f6 !important;
+  font-weight: 600 !important;
+}
+
+#${PRINT_CONTAINER_ID} hr {
+  border: 0 !important;
+  border-top: 1px solid #d5dde6 !important;
+  margin: 1.2em 0 !important;
+}
+
+#${PRINT_CONTAINER_ID} .formula-inline {
+  border: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+#${PRINT_CONTAINER_ID} .katex {
+  font-size: 1em !important;
+}
+
+#${PRINT_CONTAINER_ID} .katex-display {
+  margin: 0.45em 0 !important;
+  overflow-x: auto !important;
+}
+
+#${PRINT_CONTAINER_ID} .code-controls,
+#${PRINT_CONTAINER_ID} .code-copy-btn,
+#${PRINT_CONTAINER_ID} .code-copy-toast,
+#${PRINT_CONTAINER_ID} [data-code-lang-select] {
+  display: none !important;
+}
+`
+
+function createPrintDom(content: string): { root: HTMLElement; style: HTMLStyleElement } {
+  const existingRoot = document.getElementById(PRINT_CONTAINER_ID)
+  if (existingRoot) existingRoot.remove()
+  const existingStyle = document.getElementById(PRINT_STYLE_ID)
+  if (existingStyle) existingStyle.remove()
+
+  const style = document.createElement('style')
+  style.id = PRINT_STYLE_ID
+  style.textContent = PRINT_CSS
+  document.head.appendChild(style)
+
+  const root = document.createElement('div')
+  root.id = PRINT_CONTAINER_ID
+  root.innerHTML = content
+  root.querySelectorAll('.code-controls, .code-copy-btn, .code-copy-toast, [data-code-lang-select]').forEach((el) => el.remove())
+  root.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'))
+  document.body.appendChild(root)
+
+  return { root, style }
+}
+
+function cleanupPrintDom(root?: HTMLElement | null, style?: HTMLStyleElement | null): void {
+  document.body.classList.remove('pmd-printing')
+  if (root && root.parentNode) root.remove()
+  if (style && style.parentNode) style.remove()
 }
 
 type ExportPdfResult = 'saved' | 'cancelled' | 'fallback'
@@ -208,77 +263,24 @@ export async function exportAsPdf(
   title: string,
 ): Promise<ExportPdfResult> {
   const safeTitle = sanitizeFileBaseName(title)
-  const host = buildPdfRenderContainer(content)
-  const root = host.querySelector('.pdf-export-root') as HTMLElement | null
-  if (!root) {
-    host.remove()
-    return 'cancelled'
-  }
+  const prevTitle = document.title
+  document.title = safeTitle
 
+  let root: HTMLElement | null = null
+  let style: HTMLStyleElement | null = null
   try {
-    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-      import('html2canvas'),
-      import('jspdf'),
-    ])
+    const dom = createPrintDom(content)
+    root = dom.root
+    style = dom.style
+    document.body.classList.add('pmd-printing')
 
-    const canvas = await html2canvas(root, {
-      backgroundColor: '#ffffff',
-      scale: 2,
-      useCORS: true,
-      logging: false,
-    })
-
-    const pdf = new jsPDF({
-      orientation: 'p',
-      unit: 'pt',
-      format: 'a4',
-      compress: true,
-    })
-
-    const pageWidth = pdf.internal.pageSize.getWidth()
-    const pageHeight = pdf.internal.pageSize.getHeight()
-    const margin = 42
-    const usableWidth = pageWidth - margin * 2
-    const usableHeight = pageHeight - margin * 2
-    const imageWidth = usableWidth
-    const imageHeight = (canvas.height * imageWidth) / canvas.width
-    const imageData = canvas.toDataURL('image/png')
-
-    let heightLeft = imageHeight - usableHeight
-    let position = margin
-    pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight, undefined, 'FAST')
-
-    while (heightLeft > 0) {
-      position = margin - (imageHeight - usableHeight - heightLeft)
-      pdf.addPage()
-      pdf.addImage(imageData, 'PNG', margin, position, imageWidth, imageHeight, undefined, 'FAST')
-      heightLeft -= usableHeight
-    }
-
-    const arrayBuffer = pdf.output('arraybuffer') as ArrayBuffer
-    const binary = arrayBufferToUint8Array(arrayBuffer)
-
-    if (isTauriRuntime()) {
-      try {
-        const [{ save }, { writeFile }] = await Promise.all([
-          import('@tauri-apps/plugin-dialog'),
-          import('@tauri-apps/plugin-fs'),
-        ])
-        const savePath = await save({
-          defaultPath: `${safeTitle}.pdf`,
-          filters: [{ name: 'PDF', extensions: ['pdf'] }],
-        })
-        if (!savePath) return 'cancelled'
-        await writeFile(savePath, binary)
-        return 'saved'
-      } catch {
-        // fall through to browser download
-      }
-    }
-
-    browserDownload(new Blob([binary], { type: 'application/pdf' }), `${safeTitle}.pdf`)
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 80))
+    window.print()
+    return 'saved'
+  } catch {
     return 'fallback'
   } finally {
-    host.remove()
+    document.title = prevTitle
+    cleanupPrintDom(root, style)
   }
 }

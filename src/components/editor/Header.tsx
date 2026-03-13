@@ -476,10 +476,10 @@ export function Header() {
 
   const handleExportPdf = useCallback(async () => {
     if (!currentDocument) return
-    toast.info('正在导出 PDF，请稍候…')
+    toast.info('正在打开 PDF 导出对话框…')
     const result = await exportAsPdf(currentDocument.content, currentDocument.title)
-    if (result === 'saved') toast.success('PDF 已保存')
-    else if (result === 'fallback') toast.success('PDF 已下载')
+    if (result === 'saved') toast.success('请在系统打印窗口中选择“存储为 PDF”')
+    else if (result === 'fallback') toast.error('PDF 导出失败，请重试')
   }, [currentDocument])
 
   // Auto-save on Ctrl+S

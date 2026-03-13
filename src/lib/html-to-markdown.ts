@@ -36,7 +36,18 @@ function normalizeCodeText(text: string): string {
 function normalizeInlineLatex(raw: string): string {
   const trimmed = raw.trim()
   if (!trimmed) return ''
-  return trimmed.replace(/\$/g, '\\$')
+  let normalized = trimmed
+    .replace(/^\$+/, '')
+    .replace(/\$+$/, '')
+    .replace(/\r\n?/g, ' ')
+    .replace(/\s+/g, ' ')
+    // Some serialized HTML may contain escaped backslashes (\\frac); convert
+    // command-style double slashes back to single slash for LaTeX.
+    .replace(/\\\\([a-zA-Z])/g, '\\$1')
+    .replace(/\\\\\{/g, '\\{')
+    .replace(/\\\\\}/g, '\\}')
+  normalized = normalized.replace(/\$/g, '\\$')
+  return normalized
 }
 
 function detectCodeLanguage(source: Element): string {
