@@ -99,6 +99,123 @@ body {
 }
 `
 
+const PAPER_SERIF_TEMPLATE_CSS = `:root {
+  --background: #f7f2e7;
+  --foreground: #2b2a28;
+  --card: #fffaf1;
+  --card-foreground: #2b2a28;
+  --border: #d7c7ab;
+  --muted: #efe3ce;
+  --muted-foreground: #6d5f4a;
+  --accent: #ead0b0;
+  --accent-foreground: #3a2f25;
+  --primary: #8b5a2b;
+  --primary-foreground: #fffaf0;
+  --pmd-link-color: #8a3b12;
+  --pmd-code-bg: #f4ead9;
+  --pmd-code-fg: #2e2a26;
+  --pmd-code-border: #cdb898;
+  --pmd-table-border: #cdb898;
+  --pmd-table-header-bg: #eadcc5;
+  --pmd-formula-bg: #f2e6d2;
+  --pmd-formula-fg: #3f3327;
+  --pmd-formula-border: #c8b292;
+}
+.prose-editor { font-family: 'Iowan Old Style', 'Times New Roman', serif; }
+.prose-editor p {
+  border-left: 3px solid rgba(139, 90, 43, 0.28);
+  background: rgba(255, 250, 242, 0.55);
+  padding: 0.45rem 0.9rem;
+  border-radius: 0 10px 10px 0;
+}
+.prose-editor h1, .prose-editor h2, .prose-editor h3 {
+  color: #5e3f1b;
+  letter-spacing: 0.01em;
+}
+`
+
+const CYBER_GRID_TEMPLATE_CSS = `:root {
+  --background: #06070d;
+  --foreground: #d9f8ff;
+  --card: rgba(11, 15, 30, 0.78);
+  --card-foreground: #d9f8ff;
+  --border: rgba(72, 224, 255, 0.3);
+  --muted: rgba(44, 111, 255, 0.14);
+  --muted-foreground: #9ee7ff;
+  --accent: rgba(255, 74, 216, 0.18);
+  --accent-foreground: #ffe7fb;
+  --primary: #46d8ff;
+  --primary-foreground: #021014;
+  --pmd-link-color: #4dedff;
+  --pmd-code-bg: #020513;
+  --pmd-code-fg: #c3f8ff;
+  --pmd-code-border: rgba(70, 216, 255, 0.45);
+  --pmd-table-border: rgba(70, 216, 255, 0.45);
+  --pmd-table-header-bg: rgba(255, 74, 216, 0.16);
+  --pmd-formula-bg: rgba(70, 216, 255, 0.1);
+  --pmd-formula-fg: #9cf4ff;
+  --pmd-formula-border: rgba(70, 216, 255, 0.5);
+}
+body {
+  background:
+    linear-gradient(rgba(70,216,255,0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(70,216,255,0.08) 1px, transparent 1px),
+    radial-gradient(circle at 80% -10%, rgba(255, 74, 216, 0.2), transparent 45%),
+    #04050b;
+  background-size: 26px 26px, 26px 26px, auto, auto;
+}
+.prose-editor p {
+  border: 1px solid rgba(70, 216, 255, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(255, 74, 216, 0.12);
+  border-radius: 6px;
+  padding: 0.45rem 0.65rem;
+}
+.prose-editor h1, .prose-editor h2, .prose-editor h3 {
+  text-shadow: 0 0 10px rgba(70, 216, 255, 0.45);
+}
+`
+
+const FOREST_NOTE_TEMPLATE_CSS = `:root {
+  --background: #0f1d16;
+  --foreground: #e8f6ee;
+  --card: rgba(17, 42, 30, 0.72);
+  --card-foreground: #e8f6ee;
+  --border: rgba(113, 206, 155, 0.28);
+  --muted: rgba(46, 116, 84, 0.18);
+  --muted-foreground: #abdcc1;
+  --accent: rgba(111, 187, 127, 0.2);
+  --accent-foreground: #e5ffe9;
+  --primary: #71ce9b;
+  --primary-foreground: #0d2619;
+  --pmd-link-color: #9df3cc;
+  --pmd-code-bg: rgba(9, 29, 20, 0.95);
+  --pmd-code-fg: #d1ffea;
+  --pmd-code-border: rgba(113, 206, 155, 0.35);
+  --pmd-table-border: rgba(113, 206, 155, 0.35);
+  --pmd-table-header-bg: rgba(113, 206, 155, 0.2);
+  --pmd-formula-bg: rgba(137, 255, 193, 0.1);
+  --pmd-formula-fg: #d5ffe7;
+  --pmd-formula-border: rgba(113, 206, 155, 0.45);
+}
+body {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(140, 255, 190, 0.2), transparent 40%),
+    radial-gradient(circle at 90% 8%, rgba(95, 194, 141, 0.17), transparent 45%),
+    #0c1712;
+}
+.prose-editor p {
+  border: 1px solid rgba(113, 206, 155, 0.22);
+  background: rgba(130, 236, 173, 0.06);
+  border-radius: 14px;
+  padding: 0.45rem 0.75rem;
+}
+.prose-editor h1, .prose-editor h2, .prose-editor h3 {
+  color: #b9ffd8;
+  border-bottom: 1px dashed rgba(185, 255, 216, 0.38);
+  padding-bottom: 0.1rem;
+}
+`
+
 export function Header() {
   const { currentDocument, updateCurrentTitle, saveDocument } = useEditorStore()
   const [isSaving, setIsSaving] = useState(false)
@@ -108,8 +225,16 @@ export function Header() {
     typeof window !== 'undefined' ? localStorage.getItem(CUSTOM_THEME_KEY) || '' : ''
   )
   const [isThemeDialogOpen, setIsThemeDialogOpen] = useState(false)
-  const selectedTemplate: 'none' | 'aurora' =
-    customCssDraft.trim() === AURORA_TEMPLATE_CSS.trim() ? 'aurora' : 'none'
+  const selectedTemplate: 'none' | 'aurora' | 'paper' | 'cyber' | 'forest' =
+    customCssDraft.trim() === AURORA_TEMPLATE_CSS.trim()
+      ? 'aurora'
+      : customCssDraft.trim() === PAPER_SERIF_TEMPLATE_CSS.trim()
+        ? 'paper'
+        : customCssDraft.trim() === CYBER_GRID_TEMPLATE_CSS.trim()
+          ? 'cyber'
+          : customCssDraft.trim() === FOREST_NOTE_TEMPLATE_CSS.trim()
+            ? 'forest'
+            : 'none'
 
   const applyCustomThemeCss = useCallback((cssText: string) => {
     let styleEl = document.getElementById(CUSTOM_THEME_STYLE_ID) as HTMLStyleElement | null
@@ -141,12 +266,24 @@ export function Header() {
 
   const openExternalUrl = useCallback(async (url: string) => {
     try {
+      const openedWindow = window.open(url, '_blank', 'noopener,noreferrer')
+      if (openedWindow) return
+    } catch {
+      // Continue to shell fallback.
+    }
+    try {
       await openExternal(url)
       return
     } catch {
       // Fallback for non-Tauri environments.
     }
-    window.open(url, '_blank')
+    const a = document.createElement('a')
+    a.href = url
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
   }, [])
 
   useEffect(() => {
@@ -235,7 +372,7 @@ export function Header() {
     toast.success('Custom theme CSS reset')
   }
 
-  const handleApplyTemplate = (template: 'none' | 'aurora') => {
+  const handleApplyTemplate = (template: 'none' | 'aurora' | 'paper' | 'cyber' | 'forest') => {
     if (template === 'none') {
       setCustomCssDraft('')
       localStorage.removeItem(CUSTOM_THEME_KEY)
@@ -243,12 +380,18 @@ export function Header() {
       toast.success('Template cleared')
       return
     }
-    if (template === 'aurora') {
-      setCustomCssDraft(AURORA_TEMPLATE_CSS)
-      localStorage.setItem(CUSTOM_THEME_KEY, AURORA_TEMPLATE_CSS)
-      applyCustomThemeCss(AURORA_TEMPLATE_CSS)
-      toast.success('Aurora template applied')
+    const templates: Record<'aurora' | 'paper' | 'cyber' | 'forest', { css: string; name: string }> = {
+      aurora: { css: AURORA_TEMPLATE_CSS, name: 'Aurora' },
+      paper: { css: PAPER_SERIF_TEMPLATE_CSS, name: 'Paper Serif' },
+      cyber: { css: CYBER_GRID_TEMPLATE_CSS, name: 'Cyber Grid' },
+      forest: { css: FOREST_NOTE_TEMPLATE_CSS, name: 'Forest Note' },
     }
+    const selected = templates[template]
+    if (!selected) return
+    setCustomCssDraft(selected.css)
+    localStorage.setItem(CUSTOM_THEME_KEY, selected.css)
+    applyCustomThemeCss(selected.css)
+    toast.success(`${selected.name} template applied`)
   }
 
   return (
@@ -329,6 +472,33 @@ export function Header() {
               />
               <div className="mt-2 text-sm font-medium">Aurora Elegant</div>
               <div className="text-xs text-muted-foreground">High contrast + glow style</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyTemplate('paper')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'paper' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+            >
+              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#fff8eb 0%,#f3e5cb 100%)' }} />
+              <div className="mt-2 text-sm font-medium">Paper Serif</div>
+              <div className="text-xs text-muted-foreground">Classic print / journal look</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyTemplate('cyber')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'cyber' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+            >
+              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#05070f 0%,#0b1432 100%)' }} />
+              <div className="mt-2 text-sm font-medium">Cyber Grid</div>
+              <div className="text-xs text-muted-foreground">Neon contrast + futuristic lines</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyTemplate('forest')}
+              className={`rounded-lg border p-2 text-left transition ${selectedTemplate === 'forest' ? 'border-primary ring-1 ring-primary/40' : 'hover:border-primary/50'}`}
+            >
+              <div className="h-20 w-full rounded-md border" style={{ background: 'linear-gradient(180deg,#0d1a14 0%,#173426 100%)' }} />
+              <div className="mt-2 text-sm font-medium">Forest Note</div>
+              <div className="text-xs text-muted-foreground">Natural green / elegant reading</div>
             </button>
             <button
               type="button"

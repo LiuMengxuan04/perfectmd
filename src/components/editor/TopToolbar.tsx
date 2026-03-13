@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Bold,
@@ -82,6 +83,10 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showHighlightPicker, setShowHighlightPicker] = useState(false)
   const [showFontSizePicker, setShowFontSizePicker] = useState(false)
+  const [customTextColor, setCustomTextColor] = useState('#3b82f6')
+  const [customHighlightColor, setCustomHighlightColor] = useState('#fef08a')
+  const [textRgbInput, setTextRgbInput] = useState('59, 130, 246')
+  const [highlightRgbInput, setHighlightRgbInput] = useState('254, 240, 138')
 
   const toolbarButtons = [
     { icon: Bold, title: 'Bold (Ctrl+B)', style: 'bold', active: formatState.bold },
@@ -93,6 +98,14 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
 
   const preventToolbarMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
+  }
+
+  const parseRgbInput = (value: string): string | null => {
+    const matched = value.match(/\d+/g)
+    if (!matched || matched.length !== 3) return null
+    const [r, g, b] = matched.map((n) => Math.max(0, Math.min(255, Number(n))))
+    if ([r, g, b].some(Number.isNaN)) return null
+    return `rgb(${r}, ${g}, ${b})`
   }
 
   return (
@@ -119,7 +132,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
             <Palette className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-48 p-2" align="start">
+        <PopoverContent className="w-56 p-2" align="start">
           <div className="grid grid-cols-5 gap-1">
             {TEXT_COLORS.map((color) => (
               <button
@@ -139,6 +152,40 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
               </button>
             ))}
           </div>
+          <div className="mt-2 space-y-2 border-t pt-2">
+            <div className="flex items-center gap-2">
+              <Input
+                type="color"
+                value={customTextColor}
+                onMouseDown={preventToolbarMouseDown}
+                onChange={(e) => {
+                  const hex = e.target.value
+                  setCustomTextColor(hex)
+                  onApplyStyle('color', hex)
+                }}
+                className="h-8 w-12 cursor-pointer p-1"
+              />
+              <Input
+                value={textRgbInput}
+                onMouseDown={preventToolbarMouseDown}
+                onChange={(e) => setTextRgbInput(e.target.value)}
+                placeholder="R, G, B"
+                className="h-8 text-xs"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onMouseDown={preventToolbarMouseDown}
+                onClick={() => {
+                  const rgb = parseRgbInput(textRgbInput)
+                  if (!rgb) return
+                  onApplyStyle('color', rgb)
+                }}
+              >
+                应用
+              </Button>
+            </div>
+          </div>
         </PopoverContent>
       </Popover>
 
@@ -148,7 +195,7 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
             <Highlighter className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-48 p-2" align="start">
+        <PopoverContent className="w-56 p-2" align="start">
           <div className="grid grid-cols-7 gap-1">
             {HIGHLIGHT_COLORS.map((color) => (
               <button
@@ -167,6 +214,40 @@ export function TopToolbar({ onApplyStyle, formatState }: TopToolbarProps) {
                 )}
               </button>
             ))}
+          </div>
+          <div className="mt-2 space-y-2 border-t pt-2">
+            <div className="flex items-center gap-2">
+              <Input
+                type="color"
+                value={customHighlightColor}
+                onMouseDown={preventToolbarMouseDown}
+                onChange={(e) => {
+                  const hex = e.target.value
+                  setCustomHighlightColor(hex)
+                  onApplyStyle('highlight', hex)
+                }}
+                className="h-8 w-12 cursor-pointer p-1"
+              />
+              <Input
+                value={highlightRgbInput}
+                onMouseDown={preventToolbarMouseDown}
+                onChange={(e) => setHighlightRgbInput(e.target.value)}
+                placeholder="R, G, B"
+                className="h-8 text-xs"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onMouseDown={preventToolbarMouseDown}
+                onClick={() => {
+                  const rgb = parseRgbInput(highlightRgbInput)
+                  if (!rgb) return
+                  onApplyStyle('highlight', rgb)
+                }}
+              >
+                应用
+              </Button>
+            </div>
           </div>
         </PopoverContent>
       </Popover>

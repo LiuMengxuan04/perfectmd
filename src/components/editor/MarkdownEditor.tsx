@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { open as openExternal } from '@tauri-apps/plugin-shell'
+import hljs from 'highlight.js/lib/common'
 
 interface MarkdownEditorProps {
   content: string
@@ -46,6 +47,20 @@ const FONT_SIZE_STEP = 4
 const MIN_FONT_SIZE = 10
 const MAX_FONT_SIZE = 72
 const DEFAULT_FONT_SIZE = 16
+const CODE_LANGUAGES = [
+  'plaintext',
+  'javascript',
+  'typescript',
+  'python',
+  'java',
+  'go',
+  'rust',
+  'json',
+  'bash',
+  'html',
+  'css',
+  'sql',
+]
 
 export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
@@ -79,9 +94,75 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const shouldResetInlineTypingRef = useRef(false)
   const isComposingRef = useRef(false)
 
+  const normalizeCodeBlockToPlainText = useCallback((codeEl: HTMLElement) => {
+    const rawText = codeEl.textContent || ''
+    codeEl.textContent = rawText
+    codeEl.removeAttribute('data-highlighted')
+  }, [])
+
+  const applySyntaxHighlight = useCallback((codeEl: HTMLElement, language: string, force = false) => {
+    const selection = window.getSelection()
+    if (!force && selection && selection.rangeCount) {
+      const anchor = selection.anchorNode
+      if (anchor && codeEl.contains(anchor)) {
+        normalizeCodeBlockToPlainText(codeEl)
+        return
+      }
+    }
+    const rawText = codeEl.textContent || ''
+    if (!rawText.trim() || language === 'plaintext') {
+      normalizeCodeBlockToPlainText(codeEl)
+      return
+    }
+    try {
+      const highlighted = hljs.highlight(rawText, {
+        language,
+        ignoreIllegals: true,
+      }).value
+      codeEl.innerHTML = highlighted || rawText
+      codeEl.setAttribute('data-highlighted', 'true')
+    } catch {
+      normalizeCodeBlockToPlainText(codeEl)
+    }
+  }, [normalizeCodeBlockToPlainText])
+
+  const renderCodeHighlights = useCallback((editor: HTMLDivElement, force = false) => {
+    const wrappers = editor.querySelectorAll('.code-block-wrapper')
+    wrappers.forEach((wrapper) => {
+      const codeEl = wrapper.querySelector('pre code') as HTMLElement | null
+      if (!codeEl) return
+      const langSelect = wrapper.querySelector('[data-code-lang-select="true"]') as HTMLSelectElement | null
+      const lang = (langSelect?.value || wrapper.getAttribute('data-code-language') || 'plaintext').toLowerCase()
+      wrapper.setAttribute('data-code-language', lang)
+      codeEl.setAttribute('data-language', lang)
+      applySyntaxHighlight(codeEl, lang, force)
+    })
+  }, [applySyntaxHighlight])
+
   const ensureCodeBlockControls = useCallback((editor: HTMLDivElement) => {
     const wrappers = editor.querySelectorAll('.code-block-wrapper')
     wrappers.forEach((wrapper) => {
+      let langSelect = wrapper.querySelector('[data-code-lang-select="true"]') as HTMLSelectElement | null
+      if (!langSelect) {
+        langSelect = document.createElement('select')
+        langSelect.className = 'code-lang-select'
+        langSelect.setAttribute('contenteditable', 'false')
+        langSelect.setAttribute('data-code-lang-select', 'true')
+        CODE_LANGUAGES.forEach((lang) => {
+          const option = document.createElement('option')
+          option.value = lang
+          option.textContent = lang
+          langSelect?.appendChild(option)
+        })
+        wrapper.appendChild(langSelect)
+      }
+      const currentLang = (wrapper.getAttribute('data-code-language') || 'plaintext').toLowerCase()
+      if (CODE_LANGUAGES.includes(currentLang)) {
+        langSelect.value = currentLang
+      } else {
+        langSelect.value = 'plaintext'
+        wrapper.setAttribute('data-code-language', 'plaintext')
+      }
       let copyBtn = wrapper.querySelector('[data-copy-code-btn="true"]') as HTMLButtonElement | null
       if (!copyBtn) {
         copyBtn = document.createElement('button')
@@ -163,12 +244,18 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       }
 
       ensureCodeBlockControls(editor)
+      editor.querySelectorAll('.code-block-wrapper pre code').forEach((codeNode) => {
+        normalizeCodeBlockToPlainText(codeNode as HTMLElement)
+      })
 
       isInternalChange.current = true
       const newContent = editor.innerHTML
       onChange(newContent)
+      requestAnimationFrame(() => {
+        renderCodeHighlights(editor, false)
+      })
     }
-  }, [ensureCodeBlockControls, onChange])
+  }, [ensureCodeBlockControls, normalizeCodeBlockToPlainText, onChange, renderCodeHighlights])
 
   const scrollCaretIntoView = useCallback(() => {
     requestAnimationFrame(() => {
@@ -835,10 +922,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       if (document.activeElement !== editorRef.current && currentHtml !== content) {
         editorRef.current.innerHTML = content || '<p><br></p>'
         ensureCodeBlockControls(editorRef.current)
+        renderCodeHighlights(editorRef.current, true)
       }
     }
     isInternalChange.current = false
-  }, [content, ensureCodeBlockControls])
+  }, [content, ensureCodeBlockControls, renderCodeHighlights])
 
   // Initialize editor content
   useEffect(() => {
@@ -1037,8 +1125,21 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const pre = document.createElement('pre')
     pre.className = 'editor-code-block'
     const code = document.createElement('code')
+    code.setAttribute('data-language', 'plaintext')
     code.appendChild(codeText)
     pre.appendChild(code)
+    wrapper.setAttribute('data-code-language', 'plaintext')
+    const langSelect = document.createElement('select')
+    langSelect.className = 'code-lang-select'
+    langSelect.setAttribute('contenteditable', 'false')
+    langSelect.setAttribute('data-code-lang-select', 'true')
+    CODE_LANGUAGES.forEach((lang) => {
+      const option = document.createElement('option')
+      option.value = lang
+      option.textContent = lang
+      langSelect.appendChild(option)
+    })
+    langSelect.value = 'plaintext'
     const copyButton = document.createElement('button')
     copyButton.type = 'button'
     copyButton.draggable = false
@@ -1052,6 +1153,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     copyToast.setAttribute('contenteditable', 'false')
     copyToast.textContent = '复制成功'
     wrapper.appendChild(pre)
+    wrapper.appendChild(langSelect)
     wrapper.appendChild(copyButton)
     wrapper.appendChild(copyToast)
 
@@ -1130,11 +1232,12 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     range.deleteContents()
     const br = document.createElement('br')
     range.insertNode(br)
-    // At line end, keep a visible next line placeholder with zero-width char.
-    const spacer = document.createTextNode(isAtBlockEnd ? '\u200b' : '')
-    br.parentNode?.insertBefore(spacer, br.nextSibling)
     const caret = document.createRange()
-    caret.setStart(spacer, 0)
+    if (isAtBlockEnd) {
+      const trailingBr = document.createElement('br')
+      br.parentNode?.insertBefore(trailingBr, br.nextSibling)
+    }
+    caret.setStartAfter(br)
     caret.collapse(true)
     selection.removeAllRanges()
     selection.addRange(caret)
@@ -1394,12 +1497,14 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         e.preventDefault()
         const href = link.getAttribute('href') || link.href || ''
         if (href) {
+          try {
+            const openedWindow = window.open(href, '_blank', 'noopener,noreferrer')
+            if (openedWindow) return
+          } catch {
+            // continue to shell fallback
+          }
           void openExternal(href).catch(() => {
-            try {
-              window.open(href, '_blank')
-            } catch {
-              // ignore
-            }
+            // ignore
           })
         }
         return
@@ -1432,20 +1537,20 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     setImageOverlayRect(null)
   }, [recalcSelectedImageOverlay])
 
-  const openExternalUrl = useCallback(async (href: string) => {
+  const openExternalUrl = useCallback((href: string) => {
     const url = href.trim()
     if (!url) return
     try {
-      await openExternal(url)
-      return
+      const openedWindow = window.open(url, '_blank', 'noopener,noreferrer')
+      if (openedWindow) return
     } catch {
-      // Fallback for non-Tauri environment.
+      // Continue to shell fallback.
     }
     try {
-      const newWindow = window.open(url, '_blank')
-      if (newWindow) return
+      void openExternal(url)
+      return
     } catch {
-      // continue fallback
+      // ignore
     }
     const a = document.createElement('a')
     a.href = url
@@ -1582,6 +1687,59 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       editor.removeEventListener('click', handleCopyCodeClick)
     }
   }, [])
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+
+    const normalizeEditingCodeBlock = (target: EventTarget | null) => {
+      const element = target as HTMLElement | null
+      const codeEl = element?.closest('.code-block-wrapper pre code') as HTMLElement | null
+      if (!codeEl) return
+      if (codeEl.getAttribute('data-highlighted') === 'true') {
+        normalizeCodeBlockToPlainText(codeEl)
+      }
+    }
+
+    const handleFocusIn = (event: FocusEvent) => {
+      normalizeEditingCodeBlock(event.target)
+    }
+
+    const handleCodeMouseDown = (event: MouseEvent) => {
+      normalizeEditingCodeBlock(event.target)
+    }
+
+    const handleLangMouseDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      const select = target?.closest('[data-code-lang-select="true"]') as HTMLElement | null
+      if (!select || !editor.contains(select)) return
+      event.stopPropagation()
+    }
+
+    const handleLangChange = (event: Event) => {
+      const target = event.target as HTMLSelectElement | null
+      if (!target || target.getAttribute('data-code-lang-select') !== 'true') return
+      const wrapper = target.closest('.code-block-wrapper')
+      const codeEl = wrapper?.querySelector('pre code') as HTMLElement | null
+      if (!wrapper || !codeEl) return
+      const lang = (target.value || 'plaintext').toLowerCase()
+      wrapper.setAttribute('data-code-language', lang)
+      codeEl.setAttribute('data-language', lang)
+      applySyntaxHighlight(codeEl, lang, true)
+      handleInput()
+    }
+
+    editor.addEventListener('focusin', handleFocusIn)
+    editor.addEventListener('mousedown', handleCodeMouseDown)
+    editor.addEventListener('mousedown', handleLangMouseDown)
+    editor.addEventListener('change', handleLangChange)
+    return () => {
+      editor.removeEventListener('focusin', handleFocusIn)
+      editor.removeEventListener('mousedown', handleCodeMouseDown)
+      editor.removeEventListener('mousedown', handleLangMouseDown)
+      editor.removeEventListener('change', handleLangChange)
+    }
+  }, [applySyntaxHighlight, handleInput, normalizeCodeBlockToPlainText])
 
   const applyFontSize = useCallback((size: number) => {
     const selection = restoreSavedSelection()
@@ -2037,10 +2195,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={async () => {
+                onClick={() => {
                   if (!editingLink) return
                   const href = editingLink.href.trim()
-                  if (href) await openExternalUrl(href)
+                  if (href) openExternalUrl(href)
                 }}
               >
                 打开
@@ -2208,7 +2366,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           background-color: var(--pmd-code-bg);
           color: var(--pmd-code-fg);
           border: 1px solid var(--pmd-code-border);
-          padding: 1em;
+          padding: 1em 1em 2.6em;
           border-radius: 6px;
           overflow-x: auto;
           white-space: pre-wrap;
@@ -2249,6 +2407,23 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           opacity: 0.95;
         }
 
+        .prose-editor .code-lang-select {
+          position: absolute;
+          right: 2.9rem;
+          bottom: 0.52rem;
+          height: 1.8rem;
+          max-width: 9rem;
+          border: 1px solid var(--pmd-code-border);
+          border-radius: 0.4rem;
+          background: color-mix(in oklch, var(--background) 88%, transparent);
+          color: var(--muted-foreground);
+          font-size: 11px;
+          padding: 0 0.35rem;
+          outline: none;
+          z-index: 2;
+          cursor: pointer;
+        }
+
         .prose-editor .code-copy-btn:hover {
           color: var(--foreground);
           border-color: var(--foreground);
@@ -2256,7 +2431,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
         .prose-editor .code-copy-toast {
           position: absolute;
-          right: 2.9rem;
+          right: 10rem;
           bottom: 0.7rem;
           opacity: 0;
           transform: translateY(4px);
@@ -2286,6 +2461,17 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           min-height: 1.6em;
           line-height: 1.6;
           white-space: pre-wrap;
+        }
+
+        .prose-editor pre code[data-highlighted='true'] .hljs {
+          background: transparent;
+        }
+
+        .prose-editor p {
+          line-height: 1.8;
+          min-height: 1.8em;
+          white-space: pre-wrap;
+          caret-color: var(--foreground);
         }
         
         .prose-editor blockquote {
