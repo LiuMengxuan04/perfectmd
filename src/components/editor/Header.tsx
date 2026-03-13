@@ -173,11 +173,13 @@ export function Header() {
       .then((data) => {
         if (cancelled || !data?.tag_name || !data?.html_url) return
         if (!isRemoteVersionNewer(String(data.tag_name), appVersion)) return
+        const assets = Array.isArray(data.assets) ? data.assets : []
+        const downloadUrl = String(assets[0]?.browser_download_url || data.html_url)
         toast.info(`发现新版本 ${data.tag_name}`, {
           action: {
             label: '下载更新',
             onClick: () => {
-              openExternalUrl(String(data.html_url))
+              openExternalUrl(downloadUrl)
             },
           },
           duration: 12000,

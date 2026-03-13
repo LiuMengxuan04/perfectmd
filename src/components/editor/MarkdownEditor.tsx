@@ -1183,6 +1183,16 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return !!getCurrentListItem()
   }, [getCurrentListItem])
 
+  const cleanupEmptyParagraphContainer = useCallback((node: Element | null) => {
+    const paragraph = node?.tagName?.toLowerCase() === 'p' ? node as HTMLParagraphElement : null
+    if (!paragraph || paragraph === editorRef.current) return
+    const hasBlockChildren = paragraph.querySelector('ul, ol, pre, table, blockquote, h1, h2, h3, h4, h5, h6, hr, img')
+    const normalizedText = (paragraph.textContent || '').replace(/\u200b/g, '').trim()
+    if (!hasBlockChildren && normalizedText.length === 0) {
+      paragraph.remove()
+    }
+  }, [])
+
   const handleListEnter = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount || !editorRef.current) return false
@@ -1194,12 +1204,16 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const liText = (li.textContent || '').replace(/\u200b/g, '').trim()
     const isEmpty = liText.length === 0
     if (isEmpty) {
-      const previous = list.previousSibling
-      const next = list.nextSibling
+      const listContainer = list.parentElement?.tagName.toLowerCase() === 'p'
+        ? list.parentElement
+        : list
+      const previous = listContainer?.previousElementSibling || null
+      const next = listContainer?.nextElementSibling || null
       list.removeChild(li)
       if (list.children.length === 0) {
         list.remove()
       }
+      cleanupEmptyParagraphContainer(listContainer)
 
       const caret = document.createRange()
       if (previous && previous.nodeType === Node.ELEMENT_NODE) {
@@ -1234,7 +1248,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     selection.addRange(caret)
     savedRangeRef.current = caret.cloneRange()
     return true
-  }, [getCurrentListItem])
+  }, [cleanupEmptyParagraphContainer, getCurrentListItem])
 
   const removeSingleEmptyListAtCaret = useCallback((): boolean => {
     const selection = window.getSelection()
@@ -1247,9 +1261,13 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const liText = (li.textContent || '').replace(/\u200b/g, '').trim()
     if (liText.length > 0) return false
 
-    const previous = list.previousSibling
-    const next = list.nextSibling
+    const listContainer = list.parentElement?.tagName.toLowerCase() === 'p'
+      ? list.parentElement
+      : list
+    const previous = listContainer?.previousElementSibling || null
+    const next = listContainer?.nextElementSibling || null
     list.remove()
+    cleanupEmptyParagraphContainer(listContainer)
 
     const caret = document.createRange()
     if (previous && previous.nodeType === Node.ELEMENT_NODE) {
@@ -1269,7 +1287,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     selection.addRange(caret)
     savedRangeRef.current = caret.cloneRange()
     return true
-  }, [getCurrentListItem])
+  }, [cleanupEmptyParagraphContainer, getCurrentListItem])
 
   const getCurrentTableCell = useCallback((): HTMLTableCellElement | null => {
     const selection = window.getSelection()
@@ -1372,6 +1390,20 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     const link = target.closest('a') as HTMLAnchorElement | null
     if (link && editorRef.current.contains(link)) {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault()
+        const href = link.getAttribute('href') || link.href || ''
+        if (href) {
+          void openExternal(href).catch(() => {
+            try {
+              window.open(href, '_blank')
+            } catch {
+              // ignore
+            }
+          })
+        }
+        return
+      }
       e.preventDefault()
       const rect = link.getBoundingClientRect()
       const popoverWidth = 320
