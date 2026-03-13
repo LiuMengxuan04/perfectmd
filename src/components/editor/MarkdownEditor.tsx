@@ -98,6 +98,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     const rawText = codeEl.textContent || ''
     codeEl.textContent = rawText
     codeEl.removeAttribute('data-highlighted')
+    codeEl.classList.remove('hljs')
   }, [])
 
   const applySyntaxHighlight = useCallback((codeEl: HTMLElement, language: string, force = false) => {
@@ -121,6 +122,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       }).value
       codeEl.innerHTML = highlighted || rawText
       codeEl.setAttribute('data-highlighted', 'true')
+      codeEl.classList.add('hljs')
     } catch {
       normalizeCodeBlockToPlainText(codeEl)
     }
@@ -144,10 +146,18 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     wrappers.forEach((wrapper) => {
       const codeEl = wrapper.querySelector('pre.editor-code-block code') as HTMLElement | null
       if (!codeEl) {
-        wrapper.querySelectorAll('.code-copy-btn, .code-copy-toast, [data-code-lang-select="true"]').forEach((node) => node.remove())
+        wrapper.querySelectorAll('.code-controls, .code-copy-toast').forEach((node) => node.remove())
         return
       }
-      let langSelect = wrapper.querySelector('[data-code-lang-select="true"]') as HTMLSelectElement | null
+      let controls = wrapper.querySelector('.code-controls') as HTMLDivElement | null
+      if (!controls) {
+        controls = document.createElement('div')
+        controls.className = 'code-controls'
+        controls.setAttribute('contenteditable', 'false')
+        wrapper.appendChild(controls)
+      }
+
+      let langSelect = controls.querySelector('[data-code-lang-select="true"]') as HTMLSelectElement | null
       if (!langSelect) {
         langSelect = document.createElement('select')
         langSelect.className = 'code-lang-select'
@@ -159,7 +169,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           option.textContent = lang
           langSelect?.appendChild(option)
         })
-        wrapper.appendChild(langSelect)
+        controls.appendChild(langSelect)
       }
       const currentLang = (wrapper.getAttribute('data-code-language') || 'plaintext').toLowerCase()
       if (CODE_LANGUAGES.includes(currentLang)) {
@@ -168,7 +178,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         langSelect.value = 'plaintext'
         wrapper.setAttribute('data-code-language', 'plaintext')
       }
-      let copyBtn = wrapper.querySelector('[data-copy-code-btn="true"]') as HTMLButtonElement | null
+      let copyBtn = controls.querySelector('[data-copy-code-btn="true"]') as HTMLButtonElement | null
       if (!copyBtn) {
         copyBtn = document.createElement('button')
         copyBtn.type = 'button'
@@ -178,7 +188,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         copyBtn.setAttribute('data-copy-code-btn', 'true')
         copyBtn.title = 'Copy code'
         copyBtn.innerHTML = '⧉'
-        wrapper.appendChild(copyBtn)
+        controls.appendChild(copyBtn)
       }
       let copyToast = wrapper.querySelector('.code-copy-toast') as HTMLSpanElement | null
       if (!copyToast) {
@@ -1128,6 +1138,9 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     code.appendChild(codeText)
     pre.appendChild(code)
     wrapper.setAttribute('data-code-language', 'plaintext')
+    const controls = document.createElement('div')
+    controls.className = 'code-controls'
+    controls.setAttribute('contenteditable', 'false')
     const langSelect = document.createElement('select')
     langSelect.className = 'code-lang-select'
     langSelect.setAttribute('contenteditable', 'false')
@@ -1147,13 +1160,14 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     copyButton.setAttribute('data-copy-code-btn', 'true')
     copyButton.title = 'Copy code'
     copyButton.innerHTML = '⧉'
+    controls.appendChild(langSelect)
+    controls.appendChild(copyButton)
     const copyToast = document.createElement('span')
     copyToast.className = 'code-copy-toast'
     copyToast.setAttribute('contenteditable', 'false')
     copyToast.textContent = '复制成功'
     wrapper.appendChild(pre)
-    wrapper.appendChild(langSelect)
-    wrapper.appendChild(copyButton)
+    wrapper.appendChild(controls)
     wrapper.appendChild(copyToast)
 
     const paragraph = document.createElement('p')
@@ -2398,10 +2412,19 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           border-radius: 8px;
         }
 
-        .prose-editor .code-copy-btn {
+        .prose-editor .code-controls {
           position: absolute;
           right: 0.65rem;
-          bottom: 0.55rem;
+          bottom: 0.52rem;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.4rem;
+          z-index: 2;
+          pointer-events: auto;
+        }
+
+        .prose-editor .code-copy-btn {
+          position: static;
           height: 1.7rem;
           min-width: 1.7rem;
           border-radius: 0.4rem;
@@ -2417,14 +2440,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           transition: all 0.15s ease;
           user-select: none;
           pointer-events: auto;
-          z-index: 2;
           opacity: 0.95;
         }
 
         .prose-editor .code-lang-select {
-          position: absolute;
-          right: 2.9rem;
-          bottom: 0.52rem;
+          position: static;
           height: 1.8rem;
           max-width: 9rem;
           border: 1px solid var(--pmd-code-border);
@@ -2434,7 +2454,6 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           font-size: 11px;
           padding: 0 0.35rem;
           outline: none;
-          z-index: 2;
           cursor: pointer;
         }
 
@@ -2445,7 +2464,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
         .prose-editor .code-copy-toast {
           position: absolute;
-          right: 10rem;
+          right: 9.8rem;
           bottom: 0.7rem;
           opacity: 0;
           transform: translateY(4px);
@@ -2540,6 +2559,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         .prose-editor a {
           color: var(--pmd-link-color);
           text-decoration: underline;
+          cursor: pointer;
         }
         
         .prose-editor hr {

@@ -27,6 +27,7 @@ const CUSTOM_THEME_KEY = 'perfectmd-custom-theme-css'
 const CUSTOM_THEME_STYLE_ID = 'perfectmd-custom-theme-style'
 const FALLBACK_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
 const RELEASE_API_URL = 'https://api.github.com/repos/ssbsunshengbo/perfectmd/releases/latest'
+const UPDATE_TOAST_KEY = 'perfectmd-last-update-toast-version'
 
 const normalizeVersion = (input: string) => input.replace(/^v/i, '').trim()
 
@@ -302,17 +303,20 @@ export function Header() {
     }
   }, [])
 
-  useEffect(() => {
+  const checkForUpdates = useCallback(() => {
     if (!mounted || !appVersion) return
-    let cancelled = false
-    fetch(RELEASE_API_URL)
+    fetch(RELEASE_API_URL, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (cancelled || !data?.tag_name || !data?.html_url) return
+        if (!data?.tag_name || !data?.html_url) return
         if (!isRemoteVersionNewer(String(data.tag_name), appVersion)) return
+        const latestTag = String(data.tag_name)
+        const lastPrompted = localStorage.getItem(UPDATE_TOAST_KEY)
+        if (lastPrompted === latestTag) return
         const assets = Array.isArray(data.assets) ? data.assets : []
         const downloadUrl = String(assets[0]?.browser_download_url || data.html_url)
-        toast.info(`发现新版本 ${data.tag_name}`, {
+        localStorage.setItem(UPDATE_TOAST_KEY, latestTag)
+        toast.info(`发现新版本 ${latestTag}`, {
           action: {
             label: '下载更新',
             onClick: () => {
@@ -323,12 +327,24 @@ export function Header() {
         })
       })
       .catch(() => {
-        // Ignore network errors.
+        // Ignore transient network issues and retry later.
       })
-    return () => {
-      cancelled = true
-    }
   }, [appVersion, mounted, openExternalUrl])
+
+  useEffect(() => {
+    if (!mounted) return
+    const intervalId = window.setInterval(checkForUpdates, 5 * 60 * 1000)
+    const visibilityHandler = () => {
+      if (document.visibilityState === 'visible') checkForUpdates()
+    }
+    checkForUpdates()
+    window.setTimeout(checkForUpdates, 3000)
+    document.addEventListener('visibilitychange', visibilityHandler)
+    return () => {
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', visibilityHandler)
+    }
+  }, [checkForUpdates, mounted])
 
   const handleSaveDocument = useCallback(async () => {
     if (!currentDocument) return
