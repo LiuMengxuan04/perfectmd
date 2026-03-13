@@ -29,6 +29,70 @@ const FALLBACK_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
 const RELEASE_API_URL = 'https://api.github.com/repos/ssbsunshengbo/perfectmd/releases/latest'
 
 const normalizeVersion = (input: string) => input.replace(/^v/i, '').trim()
+type ReleaseAsset = { name?: string; browser_download_url?: string }
+
+const getRuntimeClientInfo = () => {
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : ''
+  const platform = typeof navigator !== 'undefined' ? (navigator.platform || '').toLowerCase() : ''
+  const os = /win/i.test(platform) || ua.includes('windows')
+    ? 'windows'
+    : /mac/i.test(platform) || ua.includes('mac os')
+      ? 'macos'
+      : /linux/i.test(platform) || ua.includes('linux')
+        ? 'linux'
+        : 'unknown'
+  const arch = /(arm64|aarch64)/i.test(ua) ? 'arm64' : 'x64'
+  return { os, arch }
+}
+
+const chooseBestAssetUrl = (assets: ReleaseAsset[], fallbackUrl: string) => {
+  if (!assets.length) return fallbackUrl
+  const { os, arch } = getRuntimeClientInfo()
+  const normalized = assets.map((asset) => ({
+    name: String(asset.name || '').toLowerCase(),
+    url: String(asset.browser_download_url || ''),
+  }))
+
+  const pick = (predicates: Array<(name: string) => boolean>) => {
+    for (const predicate of predicates) {
+      const found = normalized.find((asset) => asset.url && predicate(asset.name))
+      if (found) return found.url
+    }
+    return ''
+  }
+
+  if (os === 'macos') {
+    const macUrl = pick([
+      (name) =>
+        name.endsWith('.dmg') &&
+        (arch === 'arm64' ? /(arm64|aarch64)/.test(name) : /(x64|x86_64)/.test(name)),
+      (name) => name.endsWith('.dmg') && arch === 'arm64' && !/(x64|x86_64)/.test(name),
+      (name) => name.endsWith('.dmg') && arch !== 'arm64' && !/(arm64|aarch64)/.test(name),
+      (name) => name.endsWith('.dmg'),
+    ])
+    if (macUrl) return macUrl
+  }
+
+  if (os === 'windows') {
+    const windowsUrl = pick([
+      (name) => name.endsWith('.msi') && /(x64|x86_64)/.test(name),
+      (name) => name.endsWith('.msi'),
+      (name) => name.endsWith('.exe'),
+    ])
+    if (windowsUrl) return windowsUrl
+  }
+
+  if (os === 'linux') {
+    const linuxUrl = pick([
+      (name) => name.endsWith('.deb'),
+      (name) => name.endsWith('.appimage'),
+      (name) => name.endsWith('.rpm'),
+    ])
+    if (linuxUrl) return linuxUrl
+  }
+
+  return normalized.find((asset) => asset.url)?.url || fallbackUrl
+}
 
 const isRemoteVersionNewer = (remote: string, local: string) => {
   const a = normalizeVersion(remote).split('.').map((n) => Number(n) || 0)
@@ -357,7 +421,7 @@ export function Header() {
         const latestTag = String(data.tag_name)
         if (shownUpdateTagRef.current === latestTag) return
         const assets = Array.isArray(data.assets) ? data.assets : []
-        const downloadUrl = String(assets[0]?.browser_download_url || data.html_url)
+        const downloadUrl = chooseBestAssetUrl(assets, String(data.html_url))
         shownUpdateTagRef.current = latestTag
         toast.info(`发现新版本 ${latestTag}`, {
           action: {
