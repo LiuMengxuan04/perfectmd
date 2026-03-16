@@ -46,7 +46,7 @@ function normalizeInlineLatex(raw: string): string {
     .replace(/\\\\([a-zA-Z])/g, '\\$1')
     .replace(/\\\\\{/g, '\\{')
     .replace(/\\\\\}/g, '\\}')
-  normalized = normalized.replace(/\$/g, '\\$')
+    .replace(/\u200B/g, '')
   return normalized
 }
 
@@ -131,8 +131,17 @@ function processNode(node: Node, inheritedStyle: StyleInfo = {}): string {
       (element as HTMLElement).dataset?.latex ||
       ''
     )
-    if (latex) return `$${latex}$`
-    return ''
+    if (!latex) return ''
+    const parent = element.parentElement
+    const hasMeaningfulSibling = !!parent && Array.from(parent.childNodes).some((node) => {
+      if (node === element) return false
+      if (node.nodeType === Node.TEXT_NODE) return !!(node.textContent || '').trim()
+      return true
+    })
+    if (!hasMeaningfulSibling) {
+      return `\n$$\n${latex}\n$$\n`
+    }
+    return `$${latex}$`
   }
 
   const style: StyleInfo = { ...inheritedStyle }

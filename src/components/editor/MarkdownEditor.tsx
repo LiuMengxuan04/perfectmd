@@ -205,6 +205,24 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const handleInput = useCallback(() => {
     if (editorRef.current) {
       const editor = editorRef.current
+      // Remove invisible ZWS anchors left by previous editing logic.
+      // They cause double-backspace deletion and oversized caret rendering
+      // after soft line breaks on some platforms.
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+      const textNodes: Text[] = []
+      let current: Node | null = walker.nextNode()
+      while (current) {
+        textNodes.push(current as Text)
+        current = walker.nextNode()
+      }
+      for (const textNode of textNodes) {
+        if (!textNode.textContent) continue
+        const cleaned = textNode.textContent.replace(/\u200B/g, '')
+        if (cleaned === textNode.textContent) continue
+        if (cleaned.length === 0) textNode.remove()
+        else textNode.textContent = cleaned
+      }
+
       const blockTags = new Set([
         'p', 'div', 'pre', 'blockquote', 'ul', 'ol', 'li',
         'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table',
@@ -597,13 +615,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         if (listBlock) {
           const ul = document.createElement('ul')
           const li = document.createElement('li')
-          const anchor = document.createTextNode('\u200B')
-          li.appendChild(anchor)
           li.appendChild(document.createElement('br'))
           ul.appendChild(li)
           listBlock.parentNode?.replaceChild(ul, listBlock)
           const r = document.createRange()
-          r.setStart(anchor, 1)
+          r.selectNodeContents(li)
           r.collapse(true)
           selection.removeAllRanges()
           selection.addRange(r)
@@ -621,13 +637,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         if (listBlock) {
           const ol = document.createElement('ol')
           const li = document.createElement('li')
-          const anchor = document.createTextNode('\u200B')
-          li.appendChild(anchor)
           li.appendChild(document.createElement('br'))
           ol.appendChild(li)
           listBlock.parentNode?.replaceChild(ol, listBlock)
           const r = document.createRange()
-          r.setStart(anchor, 1)
+          r.selectNodeContents(li)
           r.collapse(true)
           selection.removeAllRanges()
           selection.addRange(r)
@@ -1232,26 +1246,10 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   const insertSoftBreakAtCaret = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount) return false
-
-    const range = selection.getRangeAt(0)
-    range.deleteContents()
-
-    const br = document.createElement('br')
-    range.insertNode(br)
-
-    // Anchor the caret inside a real text node after the soft break.
-    // A boundary position immediately after <br> is unstable for IME input:
-    // the first Shift+Enter may appear ineffective and the first Chinese
-    // character can be committed incorrectly.
-    const anchor = document.createTextNode('\u200B')
-    br.parentNode?.insertBefore(anchor, br.nextSibling)
-
-    const caret = document.createRange()
-    caret.setStart(anchor, 1)
-    caret.collapse(true)
-    selection.removeAllRanges()
-    selection.addRange(caret)
-    savedRangeRef.current = caret.cloneRange()
+    document.execCommand('insertLineBreak', false)
+    if (selection.rangeCount) {
+      savedRangeRef.current = selection.getRangeAt(0).cloneRange()
+    }
     return true
   }, [])
 
@@ -2048,16 +2046,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         if (!newLi.innerHTML.trim()) newLi.appendChild(document.createElement('br'))
         listEl.appendChild(newLi)
         listBlock.parentNode?.replaceChild(listEl, listBlock)
-        // Place caret inside a ZWS text node so IME composition can anchor
-        // to a real text node (avoids first Chinese char becoming English).
-        const anchor = document.createTextNode('\u200B')
-        if (newLi.firstChild?.nodeName === 'BR') {
-          newLi.insertBefore(anchor, newLi.firstChild)
-        } else {
-          newLi.appendChild(anchor)
-        }
         const listR = document.createRange()
-        listR.setStart(anchor, 1)
+        listR.selectNodeContents(newLi)
         listR.collapse(true)
         selection.removeAllRanges()
         selection.addRange(listR)
