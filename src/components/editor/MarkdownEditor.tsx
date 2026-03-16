@@ -578,17 +578,26 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   }, [])
 
   const applyMarkdownShortcut = useCallback((e: React.KeyboardEvent): boolean => {
+    if ((e.nativeEvent as KeyboardEvent).isComposing || ((e.nativeEvent as KeyboardEvent).keyCode === 229)) {
+      return false
+    }
     if (!editorRef.current) return false
     const selection = window.getSelection()
     if (!selection || !selection.isCollapsed) return false
 
     const block = getCurrentBlock(selection)
     if (!block) return false
+    const blockTag = block.tagName.toLowerCase()
 
     const beforeCaret = getTextBeforeCaretInBlock(block, selection)
     const currentLine = (beforeCaret.split('\n').pop() || '').replace(/\u200b/g, '').trim()
 
     if (e.key === ' ') {
+      // Do not run block markdown shortcuts while already inside a heading.
+      // This avoids IME candidate-confirm space accidentally retriggering
+      // markdown transformations and dropping composing text.
+      if (blockTag === 'h1' || blockTag === 'h2' || blockTag === 'h3') return false
+
       const tagMap: Record<string, string> = {
         '#': 'h1',
         '##': 'h2',
@@ -1235,7 +1244,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     range.insertNode(newLineNode)
 
     const caret = document.createRange()
-    caret.setStartAfter(newLineNode)
+    caret.setStart(newLineNode, newLineNode.textContent?.length || 1)
     caret.collapse(true)
     selection.removeAllRanges()
     selection.addRange(caret)
@@ -2168,7 +2177,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.nativeEvent.isComposing || isComposingRef.current) return
+    if (e.nativeEvent.isComposing || isComposingRef.current || (e.nativeEvent as KeyboardEvent).keyCode === 229) return
 
     if ((e.key === 'Backspace' || e.key === 'Delete') && removeSingleEmptyListAtCaret()) {
       e.preventDefault()

@@ -132,16 +132,10 @@ function processNode(node: Node, inheritedStyle: StyleInfo = {}): string {
       ''
     )
     if (!latex) return ''
-    const parent = element.parentElement
-    const hasMeaningfulSibling = !!parent && Array.from(parent.childNodes).some((node) => {
-      if (node === element) return false
-      if (node.nodeType === Node.TEXT_NODE) return !!(node.textContent || '').trim()
-      return true
-    })
-    if (!hasMeaningfulSibling) {
-      return `\n$$\n${latex}\n$$\n`
-    }
-    return `$${latex}$`
+    // Export formula blocks in $$...$$ form for maximum compatibility across
+    // markdown editors (including Typora configurations that do not render
+    // inline $...$ by default).
+    return `\n$$\n${latex}\n$$\n`
   }
 
   const style: StyleInfo = { ...inheritedStyle }

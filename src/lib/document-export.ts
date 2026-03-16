@@ -76,6 +76,9 @@ export async function saveAsMarkdown(
 // Export PDF (isolated text-print flow)
 // ---------------------------------------------------------------------------
 
+const PRINT_ROOT_ID = 'perfectmd-print-root'
+const PRINT_STYLE_ID = 'perfectmd-print-style'
+
 const PRINT_CSS = `
 @page {
   size: A4;
@@ -88,7 +91,11 @@ html, body {
   background: #fff;
 }
 
-.pmd-print-root {
+body.pmd-printing > *:not(#${PRINT_ROOT_ID}) {
+  display: none !important;
+}
+
+#${PRINT_ROOT_ID}.pmd-print-root {
   color: #1e2733;
   font-size: 13.5px;
   line-height: 1.68;
@@ -98,12 +105,12 @@ html, body {
     'Helvetica Neue', Arial, sans-serif;
 }
 
-.pmd-print-root * {
+#${PRINT_ROOT_ID}.pmd-print-root * {
   text-shadow: none !important;
   box-shadow: none !important;
 }
 
-.pmd-print-root p {
+#${PRINT_ROOT_ID}.pmd-print-root p {
   margin: 0 0 0.72em !important;
   padding: 0 !important;
   border: 0 !important;
@@ -112,12 +119,12 @@ html, body {
   color: #1e2733 !important;
 }
 
-.pmd-print-root h1,
-.pmd-print-root h2,
-.pmd-print-root h3,
-.pmd-print-root h4,
-.pmd-print-root h5,
-.pmd-print-root h6 {
+#${PRINT_ROOT_ID}.pmd-print-root h1,
+#${PRINT_ROOT_ID}.pmd-print-root h2,
+#${PRINT_ROOT_ID}.pmd-print-root h3,
+#${PRINT_ROOT_ID}.pmd-print-root h4,
+#${PRINT_ROOT_ID}.pmd-print-root h5,
+#${PRINT_ROOT_ID}.pmd-print-root h6 {
   margin: 1.05em 0 0.42em !important;
   padding: 0 !important;
   border: 0 !important;
@@ -126,17 +133,17 @@ html, body {
   background: transparent !important;
 }
 
-.pmd-print-root h1 { font-size: 2em !important; }
-.pmd-print-root h2 { font-size: 1.62em !important; }
-.pmd-print-root h3 { font-size: 1.33em !important; }
+#${PRINT_ROOT_ID}.pmd-print-root h1 { font-size: 2em !important; }
+#${PRINT_ROOT_ID}.pmd-print-root h2 { font-size: 1.62em !important; }
+#${PRINT_ROOT_ID}.pmd-print-root h3 { font-size: 1.33em !important; }
 
-.pmd-print-root ul,
-.pmd-print-root ol {
+#${PRINT_ROOT_ID}.pmd-print-root ul,
+#${PRINT_ROOT_ID}.pmd-print-root ol {
   margin: 0.35em 0 0.72em !important;
   padding-left: 1.45em !important;
 }
 
-.pmd-print-root pre {
+#${PRINT_ROOT_ID}.pmd-print-root pre {
   margin: 0.58em 0 0.9em !important;
   padding: 0.62em 0.72em !important;
   border: 1px solid #d3d9e0 !important;
@@ -150,7 +157,7 @@ html, body {
   page-break-inside: avoid !important;
 }
 
-.pmd-print-root table {
+#${PRINT_ROOT_ID}.pmd-print-root table {
   width: 100% !important;
   border-collapse: collapse !important;
   margin: 0.65em 0 0.95em !important;
@@ -158,8 +165,8 @@ html, body {
   page-break-inside: avoid !important;
 }
 
-.pmd-print-root th,
-.pmd-print-root td {
+#${PRINT_ROOT_ID}.pmd-print-root th,
+#${PRINT_ROOT_ID}.pmd-print-root td {
   border: 1px solid #cfd6de !important;
   padding: 6px 8px !important;
   text-align: left !important;
@@ -167,49 +174,55 @@ html, body {
   overflow-wrap: anywhere !important;
 }
 
-.pmd-print-root th {
+#${PRINT_ROOT_ID}.pmd-print-root th {
   background: #eef2f6 !important;
 }
 
-.pmd-print-root .formula-inline {
+#${PRINT_ROOT_ID}.pmd-print-root .formula-inline {
   border: 0 !important;
   background: transparent !important;
   padding: 0 !important;
 }
 
-.pmd-print-root .katex-display {
+#${PRINT_ROOT_ID}.pmd-print-root .katex-display {
   margin: 0.45em 0 !important;
 }
 
-.pmd-print-root .code-controls,
-.pmd-print-root .code-copy-btn,
-.pmd-print-root .code-copy-toast,
-.pmd-print-root [data-code-lang-select] {
+#${PRINT_ROOT_ID}.pmd-print-root .code-controls,
+#${PRINT_ROOT_ID}.pmd-print-root .code-copy-btn,
+#${PRINT_ROOT_ID}.pmd-print-root .code-copy-toast,
+#${PRINT_ROOT_ID}.pmd-print-root [data-code-lang-select] {
   display: none !important;
 }
 `
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+function setupInPlacePrintDom(content: string): { root: HTMLElement; styleEl: HTMLStyleElement } {
+  const oldRoot = document.getElementById(PRINT_ROOT_ID)
+  if (oldRoot) oldRoot.remove()
+  const oldStyle = document.getElementById(PRINT_STYLE_ID)
+  if (oldStyle) oldStyle.remove()
+
+  const styleEl = document.createElement('style')
+  styleEl.id = PRINT_STYLE_ID
+  styleEl.textContent = PRINT_CSS
+  document.head.appendChild(styleEl)
+
+  const root = document.createElement('div')
+  root.id = PRINT_ROOT_ID
+  root.className = 'pmd-print-root'
+  root.innerHTML = content
+  root.querySelectorAll('.code-controls, .code-copy-btn, .code-copy-toast, [data-code-lang-select]').forEach((el) => el.remove())
+  root.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'))
+  document.body.appendChild(root)
+  document.body.classList.add('pmd-printing')
+
+  return { root, styleEl }
 }
 
-function buildPrintableHtml(content: string, title: string): string {
-  return `<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>${escapeHtml(title)}</title>
-    <style>${PRINT_CSS}</style>
-  </head>
-  <body>
-    <div class="pmd-print-root">${content}</div>
-  </body>
-</html>`
+function teardownInPlacePrintDom(root: HTMLElement, styleEl: HTMLStyleElement): void {
+  document.body.classList.remove('pmd-printing')
+  if (root.parentNode) root.remove()
+  if (styleEl.parentNode) styleEl.remove()
 }
 
 type ExportPdfResult = 'saved' | 'cancelled' | 'fallback'
@@ -219,40 +232,23 @@ export async function exportAsPdf(
   title: string,
 ): Promise<ExportPdfResult> {
   const safeTitle = sanitizeFileBaseName(title)
-  const html = buildPrintableHtml(content, safeTitle)
+  const prevTitle = document.title
+  document.title = safeTitle
 
-  const iframe = document.createElement('iframe')
-  iframe.style.position = 'fixed'
-  iframe.style.left = '-10000px'
-  iframe.style.top = '0'
-  iframe.style.width = '1024px'
-  iframe.style.height = '768px'
-  iframe.style.opacity = '0'
-  iframe.style.pointerEvents = 'none'
-  iframe.style.border = '0'
-  iframe.setAttribute('aria-hidden', 'true')
-  document.body.appendChild(iframe)
-
-  const cleanup = () => {
-    if (iframe.parentNode) iframe.remove()
-  }
-
+  let root: HTMLElement | null = null
+  let styleEl: HTMLStyleElement | null = null
   try {
-    await new Promise<void>((resolve) => {
-      const onLoaded = () => resolve()
-      iframe.addEventListener('load', onLoaded, { once: true })
-      iframe.srcdoc = html
-      window.setTimeout(resolve, 400)
-    })
-
-    const printWindow = iframe.contentWindow
-    if (!printWindow) return 'fallback'
-    printWindow.focus()
-    printWindow.print()
+    const dom = setupInPlacePrintDom(content)
+    root = dom.root
+    styleEl = dom.styleEl
+    window.print()
     return 'saved'
   } catch {
     return 'fallback'
   } finally {
-    window.setTimeout(cleanup, 2000)
+    document.title = prevTitle
+    if (root && styleEl) {
+      window.setTimeout(() => teardownInPlacePrintDom(root as HTMLElement, styleEl as HTMLStyleElement), 300)
+    }
   }
 }
