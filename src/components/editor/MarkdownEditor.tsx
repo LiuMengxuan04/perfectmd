@@ -2054,7 +2054,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         if (!newLi.innerHTML.trim()) newLi.appendChild(document.createElement('br'))
         listEl.appendChild(newLi)
-        listBlock.parentNode?.replaceChild(listEl, listBlock)
+        listBlock.appendChild(listEl)
         const listR = document.createRange()
         listR.selectNodeContents(newLi)
         listR.collapse(true)
@@ -2586,7 +2586,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           border-radius: 6px;
           overflow-x: auto;
           white-space: pre-wrap;
-          line-height: 1.6;
+          line-height: 1.45;
           min-height: 3.2em;
         }
 
@@ -2687,12 +2687,13 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           background-color: transparent;
           color: inherit;
           padding: 0;
+          font-size: 1em;
           display: block;
           box-sizing: border-box;
           width: 100%;
           min-width: 100%;
-          min-height: 1.6em;
-          line-height: 1.6;
+          min-height: 1.45em;
+          line-height: 1.45;
           white-space: pre-wrap;
         }
 
@@ -2701,8 +2702,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
 
         .prose-editor p {
-          line-height: 1.6;
-          min-height: 1.6em;
+          line-height: 1.5;
+          min-height: 1.5em;
           white-space: pre-wrap;
           color: var(--foreground);
           caret-color: var(--foreground);

@@ -155,9 +155,8 @@ body {
 }
 
 .prose-editor h1 {
-  background: linear-gradient(90deg, #f9a8d4, #c4b5fd 45%, #7dd3fc);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #e9d5ff;
+  text-shadow: 0 0 12px rgba(167, 139, 250, 0.35);
 }
 
 .prose-editor .formula-inline {
@@ -476,9 +475,10 @@ export function Header() {
 
   const handleExportPdf = useCallback(async () => {
     if (!currentDocument) return
-    toast.info('正在打开 PDF 导出对话框…')
+    toast.info('正在导出 PDF…')
     const result = await exportAsPdf(currentDocument.content, currentDocument.title)
-    if (result === 'saved') toast.success('请在系统打印窗口中选择“存储为 PDF”')
+    if (result === 'saved') toast.success('PDF 已导出')
+    else if (result === 'cancelled') toast.info('已取消导出')
     else if (result === 'fallback') toast.error('PDF 导出失败，请重试')
   }, [currentDocument])
 

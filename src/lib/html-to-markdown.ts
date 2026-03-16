@@ -47,6 +47,9 @@ function normalizeInlineLatex(raw: string): string {
     .replace(/\\\\\{/g, '\\{')
     .replace(/\\\\\}/g, '\\}')
     .replace(/\u200B/g, '')
+  // Tolerate incomplete fraction authored in editor dialogs (e.g. \frac{a})
+  // so downstream editors like Typora won't throw parse errors.
+  normalized = normalized.replace(/\\frac\s*\{([^{}]*)\}(?!\s*\{)/g, '\\frac{$1}{}')
   return normalized
 }
 

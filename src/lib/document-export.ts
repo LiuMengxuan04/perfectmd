@@ -73,156 +73,85 @@ export async function saveAsMarkdown(
 }
 
 // ---------------------------------------------------------------------------
-// Export PDF (isolated text-print flow)
+// Export PDF (direct file generation)
 // ---------------------------------------------------------------------------
 
-const PRINT_ROOT_ID = 'perfectmd-print-root'
-const PRINT_STYLE_ID = 'perfectmd-print-style'
-
-const PRINT_CSS = `
-@page {
-  size: A4;
-  margin: 18mm 15mm 18mm 15mm;
-}
-
-html, body {
-  margin: 0;
-  padding: 0;
-  background: #fff;
-}
-
-body.pmd-printing > *:not(#${PRINT_ROOT_ID}) {
-  display: none !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root {
-  color: #1e2733;
-  font-size: 13.5px;
-  line-height: 1.68;
-  font-family:
-    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Microsoft JhengHei',
-    'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei',
-    'Helvetica Neue', Arial, sans-serif;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root * {
-  text-shadow: none !important;
-  box-shadow: none !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root p {
-  margin: 0 0 0.72em !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  color: #1e2733 !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root h1,
-#${PRINT_ROOT_ID}.pmd-print-root h2,
-#${PRINT_ROOT_ID}.pmd-print-root h3,
-#${PRINT_ROOT_ID}.pmd-print-root h4,
-#${PRINT_ROOT_ID}.pmd-print-root h5,
-#${PRINT_ROOT_ID}.pmd-print-root h6 {
-  margin: 1.05em 0 0.42em !important;
-  padding: 0 !important;
-  border: 0 !important;
-  color: #132031 !important;
-  line-height: 1.34 !important;
-  background: transparent !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root h1 { font-size: 2em !important; }
-#${PRINT_ROOT_ID}.pmd-print-root h2 { font-size: 1.62em !important; }
-#${PRINT_ROOT_ID}.pmd-print-root h3 { font-size: 1.33em !important; }
-
-#${PRINT_ROOT_ID}.pmd-print-root ul,
-#${PRINT_ROOT_ID}.pmd-print-root ol {
-  margin: 0.35em 0 0.72em !important;
-  padding-left: 1.45em !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root pre {
-  margin: 0.58em 0 0.9em !important;
-  padding: 0.62em 0.72em !important;
-  border: 1px solid #d3d9e0 !important;
-  border-radius: 6px !important;
-  background: #f8fafc !important;
-  white-space: pre-wrap !important;
-  overflow-wrap: anywhere !important;
-  word-break: break-word !important;
-  font-size: 12px !important;
-  line-height: 1.5 !important;
-  page-break-inside: avoid !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root table {
-  width: 100% !important;
-  border-collapse: collapse !important;
-  margin: 0.65em 0 0.95em !important;
-  table-layout: fixed !important;
-  page-break-inside: avoid !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root th,
-#${PRINT_ROOT_ID}.pmd-print-root td {
-  border: 1px solid #cfd6de !important;
-  padding: 6px 8px !important;
-  text-align: left !important;
-  vertical-align: top !important;
-  overflow-wrap: anywhere !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root th {
-  background: #eef2f6 !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root .formula-inline {
-  border: 0 !important;
-  background: transparent !important;
-  padding: 0 !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root .katex-display {
-  margin: 0.45em 0 !important;
-}
-
-#${PRINT_ROOT_ID}.pmd-print-root .code-controls,
-#${PRINT_ROOT_ID}.pmd-print-root .code-copy-btn,
-#${PRINT_ROOT_ID}.pmd-print-root .code-copy-toast,
-#${PRINT_ROOT_ID}.pmd-print-root [data-code-lang-select] {
-  display: none !important;
-}
+const PDF_RENDER_STYLE = `
+  .pmd-pdf-root {
+    box-sizing: border-box;
+    width: 794px;
+    background: #fff;
+    color: #1e2733;
+    font-size: 14px;
+    line-height: 1.6;
+    font-family:
+      'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Microsoft JhengHei',
+      'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei',
+      'Helvetica Neue', Arial, sans-serif;
+    padding: 44px 52px;
+  }
+  .pmd-pdf-root p { margin: 0 0 0.72em; border: 0 !important; background: transparent !important; }
+  .pmd-pdf-root h1, .pmd-pdf-root h2, .pmd-pdf-root h3, .pmd-pdf-root h4, .pmd-pdf-root h5, .pmd-pdf-root h6 {
+    margin: 1em 0 0.42em;
+    border: 0 !important;
+    background: transparent !important;
+  }
+  .pmd-pdf-root pre {
+    margin: 0.6em 0 0.9em;
+    border: 1px solid #d3d9e0;
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: #f8fafc;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .pmd-pdf-root table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.65em 0 0.95em;
+    table-layout: fixed;
+  }
+  .pmd-pdf-root th, .pmd-pdf-root td {
+    border: 1px solid #cfd6de;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+  .pmd-pdf-root th { background: #eef2f6; }
+  .pmd-pdf-root .formula-inline {
+    border: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+  .pmd-pdf-root .code-controls,
+  .pmd-pdf-root .code-copy-btn,
+  .pmd-pdf-root .code-copy-toast,
+  .pmd-pdf-root [data-code-lang-select] {
+    display: none !important;
+  }
 `
 
-function setupInPlacePrintDom(content: string): { root: HTMLElement; styleEl: HTMLStyleElement } {
-  const oldRoot = document.getElementById(PRINT_ROOT_ID)
-  if (oldRoot) oldRoot.remove()
-  const oldStyle = document.getElementById(PRINT_STYLE_ID)
-  if (oldStyle) oldStyle.remove()
-
-  const styleEl = document.createElement('style')
-  styleEl.id = PRINT_STYLE_ID
-  styleEl.textContent = PRINT_CSS
-  document.head.appendChild(styleEl)
+function createPdfRenderHost(content: string): HTMLElement {
+  const host = document.createElement('div')
+  host.style.cssText = 'position:fixed;left:-100000px;top:0;opacity:0;pointer-events:none;'
+  const style = document.createElement('style')
+  style.textContent = PDF_RENDER_STYLE
+  host.appendChild(style)
 
   const root = document.createElement('div')
-  root.id = PRINT_ROOT_ID
-  root.className = 'pmd-print-root'
+  root.className = 'pmd-pdf-root'
   root.innerHTML = content
   root.querySelectorAll('.code-controls, .code-copy-btn, .code-copy-toast, [data-code-lang-select]').forEach((el) => el.remove())
   root.querySelectorAll('[contenteditable]').forEach((el) => el.removeAttribute('contenteditable'))
-  document.body.appendChild(root)
-  document.body.classList.add('pmd-printing')
-
-  return { root, styleEl }
+  host.appendChild(root)
+  document.body.appendChild(host)
+  return host
 }
 
-function teardownInPlacePrintDom(root: HTMLElement, styleEl: HTMLStyleElement): void {
-  document.body.classList.remove('pmd-printing')
-  if (root.parentNode) root.remove()
-  if (styleEl.parentNode) styleEl.remove()
+function arrayBufferToUint8Array(buffer: ArrayBuffer): Uint8Array {
+  return new Uint8Array(buffer)
 }
 
 type ExportPdfResult = 'saved' | 'cancelled' | 'fallback'
@@ -232,23 +161,77 @@ export async function exportAsPdf(
   title: string,
 ): Promise<ExportPdfResult> {
   const safeTitle = sanitizeFileBaseName(title)
-  const prevTitle = document.title
-  document.title = safeTitle
+  const host = createPdfRenderHost(content)
+  const root = host.querySelector('.pmd-pdf-root') as HTMLElement | null
+  if (!root) {
+    host.remove()
+    return 'fallback'
+  }
 
-  let root: HTMLElement | null = null
-  let styleEl: HTMLStyleElement | null = null
   try {
-    const dom = setupInPlacePrintDom(content)
-    root = dom.root
-    styleEl = dom.styleEl
-    window.print()
+    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf'),
+    ])
+
+    const canvas = await html2canvas(root, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    })
+
+    const pdf = new jsPDF({
+      orientation: 'p',
+      unit: 'pt',
+      format: 'a4',
+      compress: true,
+    })
+
+    const pageWidth = pdf.internal.pageSize.getWidth()
+    const pageHeight = pdf.internal.pageSize.getHeight()
+    const imageWidth = pageWidth
+    const imageHeight = (canvas.height * imageWidth) / canvas.width
+    const imageData = canvas.toDataURL('image/png')
+
+    let heightLeft = imageHeight
+    let position = 0
+    pdf.addImage(imageData, 'PNG', 0, position, imageWidth, imageHeight, undefined, 'FAST')
+    heightLeft -= pageHeight
+
+    while (heightLeft > 0) {
+      position = heightLeft - imageHeight
+      pdf.addPage()
+      pdf.addImage(imageData, 'PNG', 0, position, imageWidth, imageHeight, undefined, 'FAST')
+      heightLeft -= pageHeight
+    }
+
+    const arrayBuffer = pdf.output('arraybuffer') as ArrayBuffer
+    const binary = arrayBufferToUint8Array(arrayBuffer)
+
+    if (isTauriRuntime()) {
+      try {
+        const [{ save }, { writeFile }] = await Promise.all([
+          import('@tauri-apps/plugin-dialog'),
+          import('@tauri-apps/plugin-fs'),
+        ])
+        const savePath = await save({
+          defaultPath: `${safeTitle}.pdf`,
+          filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        })
+        if (!savePath) return 'cancelled'
+        await writeFile(savePath, binary)
+        return 'saved'
+      } catch {
+        // Fall through to browser download.
+      }
+    }
+
+    browserDownload(new Blob([binary], { type: 'application/pdf' }), `${safeTitle}.pdf`)
     return 'saved'
   } catch {
     return 'fallback'
   } finally {
-    document.title = prevTitle
-    if (root && styleEl) {
-      window.setTimeout(() => teardownInPlacePrintDom(root as HTMLElement, styleEl as HTMLStyleElement), 300)
-    }
+    host.remove()
   }
 }
