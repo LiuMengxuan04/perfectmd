@@ -597,11 +597,13 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         if (listBlock) {
           const ul = document.createElement('ul')
           const li = document.createElement('li')
+          const anchor = document.createTextNode('\u200B')
+          li.appendChild(anchor)
           li.appendChild(document.createElement('br'))
           ul.appendChild(li)
           listBlock.parentNode?.replaceChild(ul, listBlock)
           const r = document.createRange()
-          r.selectNodeContents(li)
+          r.setStart(anchor, 1)
           r.collapse(true)
           selection.removeAllRanges()
           selection.addRange(r)
@@ -619,11 +621,13 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         if (listBlock) {
           const ol = document.createElement('ol')
           const li = document.createElement('li')
+          const anchor = document.createTextNode('\u200B')
+          li.appendChild(anchor)
           li.appendChild(document.createElement('br'))
           ol.appendChild(li)
           listBlock.parentNode?.replaceChild(ol, listBlock)
           const r = document.createRange()
-          r.selectNodeContents(li)
+          r.setStart(anchor, 1)
           r.collapse(true)
           selection.removeAllRanges()
           selection.addRange(r)
@@ -662,7 +666,6 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
   }, [])
 
   const clearColorTypingState = useCallback(() => {
-    // Reset color/highlight typing state for subsequent input.
     const editorColor = editorRef.current
       ? getComputedStyle(editorRef.current).color
       : 'inherit'
@@ -839,31 +842,13 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
       replaceRange.insertNode(fragment)
 
-      const inlineTags = new Set(['strong', 'b', 'em', 'i', 's', 'del', 'code', 'a', 'u', 'span', 'font'])
       const caretRange = document.createRange()
-      // Place caret after the plain trailing space, then force it out of any
-      // inline formatting ancestor so future input is unformatted text.
-      caretRange.setStartAfter(trailingSpace)
+      // Keep caret inside the trailing text node to avoid boundary-affinity
+      // issues where the next character is considered inside inline formatting.
+      caretRange.setStart(trailingSpace, trailingSpace.length)
       caretRange.collapse(true)
       selection.removeAllRanges()
       selection.addRange(caretRange)
-
-      let node: Node | null = selection.anchorNode
-      while (node && node !== editorRef.current) {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          const el = node as HTMLElement
-          const tag = el.tagName.toLowerCase()
-          if (inlineTags.has(tag) && el.parentNode) {
-            const outRange = document.createRange()
-            outRange.setStartAfter(el)
-            outRange.collapse(true)
-            selection.removeAllRanges()
-            selection.addRange(outRange)
-            break
-          }
-        }
-        node = node.parentNode
-      }
 
       // Some browsers keep a hidden typing style state after rich-text edits.
       // Explicitly disable command-based inline styles so following input stays plain.
@@ -933,20 +918,6 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       node = node.parentNode
     }
     return false
-  }, [])
-
-  const insertPlainTextAtCaret = useCallback((text: string) => {
-    const selection = window.getSelection()
-    if (!selection || !selection.rangeCount) return
-    const range = selection.getRangeAt(0)
-    range.deleteContents()
-    const textNode = document.createTextNode(text)
-    range.insertNode(textNode)
-    const nextRange = document.createRange()
-    nextRange.setStart(textNode, textNode.length)
-    nextRange.collapse(true)
-    selection.removeAllRanges()
-    selection.addRange(nextRange)
   }, [])
 
   // Sync content to editor when it changes externally
@@ -1258,15 +1229,135 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return true
   }, [])
 
-  const insertLineBreakInParagraph = useCallback((): boolean => {
+  const insertSoftBreakAtCaret = useCallback((): boolean => {
     const selection = window.getSelection()
     if (!selection || !selection.rangeCount) return false
-    document.execCommand('insertLineBreak', false)
-    if (selection.rangeCount) {
-      savedRangeRef.current = selection.getRangeAt(0).cloneRange()
-    }
+
+    const range = selection.getRangeAt(0)
+    range.deleteContents()
+
+    const br = document.createElement('br')
+    range.insertNode(br)
+
+    // Anchor the caret inside a real text node after the soft break.
+    // A boundary position immediately after <br> is unstable for IME input:
+    // the first Shift+Enter may appear ineffective and the first Chinese
+    // character can be committed incorrectly.
+    const anchor = document.createTextNode('\u200B')
+    br.parentNode?.insertBefore(anchor, br.nextSibling)
+
+    const caret = document.createRange()
+    caret.setStart(anchor, 1)
+    caret.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedRangeRef.current = caret.cloneRange()
     return true
   }, [])
+
+  const splitParagraphAtCaret = useCallback((): boolean => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editorRef.current) return false
+
+    const editor = editorRef.current
+    const currentBlock = getCurrentBlock(selection)
+    if (!currentBlock || currentBlock === editor) return false
+
+    const hasMeaningfulContent = (node: ParentNode): boolean => {
+      const text = (node.textContent || '').replace(/\u200b/g, '').trim()
+      return text.length > 0 || !!node.querySelector('img, table, hr, pre, ul, ol, blockquote')
+    }
+
+    const ensureBlockPlaceholder = (block: HTMLElement) => {
+      if (!hasMeaningfulContent(block) && !block.querySelector('br')) {
+        block.appendChild(document.createElement('br'))
+      }
+    }
+
+    const inlineTags = new Set(['span', 'font', 'strong', 'em', 'b', 'i', 'u', 'a', 's', 'del', 'code'])
+    const stripLeadingSoftBreak = (node: ParentNode): boolean => {
+      let child = node.firstChild
+      while (child) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          if (child.textContent?.replace(/\u200b/g, '').trim()) return false
+          const next = child.nextSibling
+          child.parentNode?.removeChild(child)
+          child = next
+          continue
+        }
+
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          const element = child as HTMLElement
+          const tag = element.tagName.toLowerCase()
+          if (tag === 'br') {
+            element.parentNode?.removeChild(element)
+            return true
+          }
+          if (inlineTags.has(tag)) {
+            const stripped = stripLeadingSoftBreak(element)
+            const shouldRemoveEmptyWrapper =
+              !hasMeaningfulContent(element) &&
+              !element.querySelector('br, img, table, hr, pre, ul, ol, blockquote')
+            if (shouldRemoveEmptyWrapper) {
+              element.parentNode?.removeChild(element)
+            }
+            if (stripped) return true
+            child = shouldRemoveEmptyWrapper ? node.firstChild : element.nextSibling
+            continue
+          }
+        }
+
+        return false
+      }
+
+      return false
+    }
+
+    const range = selection.getRangeAt(0)
+    if (!range.collapsed) {
+      range.deleteContents()
+    }
+
+    const liveRange = selection.getRangeAt(0)
+    const extractRange = document.createRange()
+    extractRange.setStart(liveRange.startContainer, liveRange.startOffset)
+    extractRange.setEnd(currentBlock, currentBlock.childNodes.length)
+    const trailingContent = extractRange.extractContents()
+
+    let hasTrailing = hasMeaningfulContent(trailingContent)
+    let leadingSoftBreak = false
+    while (hasTrailing && stripLeadingSoftBreak(trailingContent)) {
+      leadingSoftBreak = true
+      hasTrailing = hasMeaningfulContent(trailingContent)
+    }
+
+    ensureBlockPlaceholder(currentBlock)
+
+    const newParagraph = document.createElement('p')
+    newParagraph.appendChild(document.createElement('br'))
+    currentBlock.parentNode?.insertBefore(newParagraph, currentBlock.nextSibling)
+
+    if (hasTrailing) {
+      if (leadingSoftBreak) {
+        const trailingParagraph = document.createElement('p')
+        trailingParagraph.appendChild(trailingContent)
+        ensureBlockPlaceholder(trailingParagraph)
+        newParagraph.parentNode?.insertBefore(trailingParagraph, newParagraph.nextSibling)
+      } else {
+        while (newParagraph.firstChild) newParagraph.removeChild(newParagraph.firstChild)
+        newParagraph.appendChild(trailingContent)
+        ensureBlockPlaceholder(newParagraph)
+      }
+    }
+
+    const caret = document.createRange()
+    caret.selectNodeContents(newParagraph)
+    caret.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(caret)
+    savedRangeRef.current = caret.cloneRange()
+    return true
+  }, [getCurrentBlock])
 
   const exitHeadingWithParagraph = useCallback((): boolean => {
     const selection = window.getSelection()
@@ -1822,10 +1913,26 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       : range.commonAncestorContainer as HTMLElement | null)
     const existingSpan = commonEl?.closest('.font-size-span') as HTMLElement | null
     if (existingSpan) {
-      existingSpan.style.fontSize = `${size}px`
-      existingSpan.style.lineHeight = '1.6'
-      handleInput()
-      return
+      // Only update in-place when the selection covers the ENTIRE span.
+      // Otherwise fall through to extract + wrap so only the selected
+      // portion gets the new size.
+      const spanRange = document.createRange()
+      spanRange.selectNodeContents(existingSpan)
+      const coversWholeSpan =
+        range.compareBoundaryPoints(Range.START_TO_START, spanRange) <= 0 &&
+        range.compareBoundaryPoints(Range.END_TO_END, spanRange) >= 0
+      if (coversWholeSpan) {
+        existingSpan.style.fontSize = `${size}px`
+        existingSpan.style.lineHeight = '1.6'
+        const newRange = document.createRange()
+        newRange.selectNodeContents(existingSpan)
+        selection.removeAllRanges()
+        selection.addRange(newRange)
+        savedRangeRef.current = newRange.cloneRange()
+        shouldResetInlineTypingRef.current = true
+        handleInput()
+        return
+      }
     }
 
     const fragment = range.extractContents()
@@ -1835,9 +1942,14 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     fontSpan.style.lineHeight = '1.6'
     fontSpan.appendChild(fragment)
     range.insertNode(fontSpan)
-    selectElement(fontSpan)
+    const newRange = document.createRange()
+    newRange.selectNodeContents(fontSpan)
+    selection.removeAllRanges()
+    selection.addRange(newRange)
+    savedRangeRef.current = newRange.cloneRange()
+    shouldResetInlineTypingRef.current = true
     handleInput()
-  }, [handleInput, restoreSavedSelection, selectElement])
+  }, [handleInput, restoreSavedSelection])
 
   // Apply style to selected text
   const applyStyle = useCallback((style: string, value?: string) => {
@@ -1869,6 +1981,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         selection.collapseToEnd()
         ensureCaretOutsideInlineFormatting()
         clearInlineTypingState()
+        clearColorTypingState()
+        shouldResetInlineTypingRef.current = false
         break
       }
       case 'highlight':
@@ -1880,6 +1994,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         selection.collapseToEnd()
         ensureCaretOutsideInlineFormatting()
         clearInlineTypingState()
+        clearColorTypingState()
+        shouldResetInlineTypingRef.current = false
         break
       case 'fontSize': {
         const numeric = Number((value || '16px').replace('px', ''))
@@ -1912,14 +2028,14 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         break
       }
       case 'list': {
-        // If already inside a list item, use execCommand to toggle list off
         const alreadyInList = !!getCurrentListItem()
         if (alreadyInList) {
           document.execCommand(value === 'bullet' ? 'insertUnorderedList' : 'insertOrderedList', false)
           break
         }
-        // Keep list in the current paragraph block so paragraph-box UI stays visible.
-        const listBlock = getCurrentBlock(selection)
+        // Isolate the current line (splitting <br>-separated content in the
+        // same <p> if necessary) so only the caret's line becomes a list item.
+        const listBlock = ensureIsolatedBlock() || getCurrentBlock(selection)
         if (!listBlock || listBlock === editorRef.current) {
           document.execCommand(value === 'bullet' ? 'insertUnorderedList' : 'insertOrderedList', false)
           break
@@ -1931,10 +2047,18 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         }
         if (!newLi.innerHTML.trim()) newLi.appendChild(document.createElement('br'))
         listEl.appendChild(newLi)
-        listBlock.appendChild(listEl)
+        listBlock.parentNode?.replaceChild(listEl, listBlock)
+        // Place caret inside a ZWS text node so IME composition can anchor
+        // to a real text node (avoids first Chinese char becoming English).
+        const anchor = document.createTextNode('\u200B')
+        if (newLi.firstChild?.nodeName === 'BR') {
+          newLi.insertBefore(anchor, newLi.firstChild)
+        } else {
+          newLi.appendChild(anchor)
+        }
         const listR = document.createRange()
-        listR.selectNodeContents(newLi)
-        listR.collapse(false)
+        listR.setStart(anchor, 1)
+        listR.collapse(true)
         selection.removeAllRanges()
         selection.addRange(listR)
         savedRangeRef.current = listR.cloneRange()
@@ -2050,11 +2174,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     // Trigger content update
     handleInput()
-  }, [applyFontSize, clearInlineTypingState, ensureCaretOutsideInlineFormatting, getCurrentBlock, getCurrentListItem, getCurrentTableCell, getFontSizeFromNode, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, openFormulaDialog, restoreSavedSelection, wrapSelectionWithStyle])
+  }, [applyFontSize, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, ensureIsolatedBlock, getCurrentBlock, getCurrentListItem, getCurrentTableCell, getFontSizeFromNode, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, openFormulaDialog, restoreSavedSelection, wrapSelectionWithStyle])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (isComposingRef.current) return
+    if (e.nativeEvent.isComposing || isComposingRef.current) return
 
     if ((e.key === 'Backspace' || e.key === 'Delete') && removeSingleEmptyListAtCaret()) {
       e.preventDefault()
@@ -2104,35 +2228,35 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       return
     }
 
+    // Block-level markdown shortcuts (## , - , 1. , ---, etc.) must be checked
+    // BEFORE the generic Enter handler which would consume the event.
+    if (e.key === 'Enter' && !e.shiftKey && applyMarkdownShortcut(e)) return
+
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault()
+      insertSoftBreakAtCaret()
+      shouldResetInlineTypingRef.current = false
+      handleInput()
+      scrollCaretIntoView()
+      return
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       const inList = isCaretInsideList()
       // Keep native behavior inside lists; in normal paragraphs we keep line
       // breaks in the same paragraph block for a Notion-like writing flow.
       if (!inList) {
         e.preventDefault()
-        ensureCaretOutsideInlineFormatting()
+        if (!splitParagraphAtCaret()) {
+          document.execCommand('insertParagraph', false)
+        }
         clearInlineTypingState()
         clearColorTypingState()
-        insertLineBreakInParagraph()
         shouldResetInlineTypingRef.current = false
         handleInput()
         scrollCaretIntoView()
         return
       }
-    }
-
-    // When caret is still inside inline formatting context (common after frequent
-    // color/inline style operations), force Enter to break out first. This avoids
-    // new-line markdown shortcuts accidentally affecting the previous line.
-    if (e.key === 'Enter' && !e.shiftKey && isCaretInsideInlineFormatting()) {
-      e.preventDefault()
-      ensureCaretOutsideInlineFormatting()
-      clearInlineTypingState()
-      insertLineBreakInParagraph()
-      shouldResetInlineTypingRef.current = false
-      handleInput()
-      scrollCaretIntoView()
-      return
     }
 
     if (shouldResetInlineTypingRef.current) {
@@ -2141,14 +2265,8 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
           shouldResetInlineTypingRef.current = false
           return
         }
-        e.preventDefault()
-        ensureCaretOutsideInlineFormatting()
-        clearInlineTypingState()
-        clearColorTypingState()
-        insertLineBreakInParagraph()
+        // Normal Enter is already handled above.
         shouldResetInlineTypingRef.current = false
-        handleInput()
-        scrollCaretIntoView()
         return
       } else if (
         e.key.length === 1 &&
@@ -2159,13 +2277,11 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         const stillInsideInline = isCaretInsideInlineFormatting()
         shouldResetInlineTypingRef.current = false
         if (stillInsideInline) {
-          e.preventDefault()
+          // Do not intercept printable keys here. IME composition starts after
+          // keydown in some browsers; preventing default would break CJK input.
           ensureCaretOutsideInlineFormatting()
           clearInlineTypingState()
           clearColorTypingState()
-          insertPlainTextAtCaret(e.key)
-          handleInput()
-          return
         }
       }
     }
@@ -2200,7 +2316,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       e.preventDefault()
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;')
     }
-  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, exitHeadingWithParagraph, handleInput, handleListEnter, insertLineBreakInParagraph, insertNewLineInCodeBlock, insertPlainTextAtCaret, isCaretInsideInlineFormatting, isCaretInsideList, isSelectionInsideCodeBlock, removeSingleEmptyListAtCaret, scrollCaretIntoView, selectedImage])
+  }, [applyInlineMarkdownShortcut, applyMarkdownShortcut, applyStyle, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, exitCurrentBlockWithNewParagraph, exitHeadingWithParagraph, handleInput, handleListEnter, insertNewLineInCodeBlock, insertSoftBreakAtCaret, isCaretInsideInlineFormatting, isCaretInsideList, isSelectionInsideCodeBlock, removeSingleEmptyListAtCaret, scrollCaretIntoView, selectedImage, splitParagraphAtCaret])
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
