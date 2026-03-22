@@ -1816,6 +1816,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
       }
       const selection = window.getSelection()
       if (!selection) return
+      if (selection.rangeCount > 0 && !selection.getRangeAt(0).collapsed) return
 
       let nextRange: Range | null = null
       const caretPosition = doc.caretPositionFromPoint?.(e.clientX, e.clientY)
