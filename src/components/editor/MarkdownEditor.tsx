@@ -1140,6 +1140,37 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     return DEFAULT_FONT_SIZE
   }, [])
 
+  const getFontSizeFromRange = useCallback((range: Range): number => {
+    const nodesToCheck: Node[] = []
+    if (range.startContainer) nodesToCheck.push(range.startContainer)
+    if (range.endContainer && range.endContainer !== range.startContainer) {
+      nodesToCheck.push(range.endContainer)
+    }
+
+    const cloned = range.cloneContents()
+    const sizedInFragment = cloned.querySelector('.font-size-span') as HTMLElement | null
+    if (sizedInFragment) {
+      const parsed = parseInt(sizedInFragment.style.fontSize || '', 10)
+      if (!Number.isNaN(parsed) && parsed > 0) return parsed
+    }
+
+    for (const node of nodesToCheck) {
+      let current: Node | null = node
+      while (current && current !== editorRef.current) {
+        if (
+          current.nodeType === Node.ELEMENT_NODE &&
+          (current as HTMLElement).classList.contains('font-size-span')
+        ) {
+          const parsed = parseInt((current as HTMLElement).style.fontSize || '', 10)
+          if (!Number.isNaN(parsed) && parsed > 0) return parsed
+        }
+        current = current.parentNode
+      }
+    }
+
+    return getFontSizeFromNode(range.startContainer)
+  }, [getFontSizeFromNode])
+
   // Helper to select an element and place current selection on it.
   const selectElement = useCallback((element: HTMLElement) => {
     const selection = window.getSelection()
@@ -2145,14 +2176,104 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
     }
 
     const fragment = range.extractContents()
-    const fontSpan = document.createElement('span')
-    fontSpan.className = 'font-size-span'
-    fontSpan.style.fontSize = `${size}px`
-    fontSpan.style.lineHeight = '1.6'
-    fontSpan.appendChild(fragment)
-    range.insertNode(fontSpan)
+    const blockTags = new Set(['p', 'div', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'ul', 'ol', 'table', 'tr', 'td', 'th'])
+    const existingSizedSpans = Array.from(fragment.querySelectorAll('.font-size-span')) as HTMLElement[]
+    const containsStructuredContent =
+      existingSizedSpans.length > 0 ||
+      !!fragment.querySelector?.('p, div, li, blockquote, h1, h2, h3, h4, h5, h6, pre, ul, ol, table, tr, td, th, br')
+
+    const wrapTextNodeWithFontSize = (textNode: Text) => {
+      if (!textNode.textContent?.trim()) return
+      const parent = textNode.parentNode
+      if (!parent) return
+      if (
+        parent.nodeType === Node.ELEMENT_NODE &&
+        (parent as HTMLElement).classList.contains('font-size-span')
+      ) {
+        const parentEl = parent as HTMLElement
+        parentEl.style.fontSize = `${size}px`
+        parentEl.style.lineHeight = '1.6'
+        return
+      }
+      const fontSpan = document.createElement('span')
+      fontSpan.className = 'font-size-span'
+      fontSpan.style.fontSize = `${size}px`
+      fontSpan.style.lineHeight = '1.6'
+      parent.insertBefore(fontSpan, textNode)
+      fontSpan.appendChild(textNode)
+    }
+
+    let firstInsertedNode: Node | null = null
+    let lastInsertedNode: Node | null = null
+
+    if (containsStructuredContent) {
+      existingSizedSpans.forEach((span) => {
+        span.style.fontSize = `${size}px`
+        span.style.lineHeight = '1.6'
+      })
+
+      const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT)
+      const textNodes: Text[] = []
+      let current: Node | null = walker.nextNode()
+      while (current) {
+        const textNode = current as Text
+        let shouldWrap = !!textNode.textContent?.trim()
+        let ancestor = textNode.parentNode
+        while (shouldWrap && ancestor && ancestor !== fragment) {
+          if (
+            ancestor.nodeType === Node.ELEMENT_NODE &&
+            (ancestor as HTMLElement).classList.contains('font-size-span')
+          ) {
+            shouldWrap = false
+            break
+          }
+          if (
+            ancestor.nodeType === Node.ELEMENT_NODE &&
+            blockTags.has((ancestor as HTMLElement).tagName.toLowerCase())
+          ) {
+            break
+          }
+          ancestor = ancestor.parentNode
+        }
+        if (shouldWrap) {
+          textNodes.push(textNode)
+        }
+        current = walker.nextNode()
+      }
+
+      textNodes.forEach(wrapTextNodeWithFontSize)
+      firstInsertedNode = fragment.firstChild
+      lastInsertedNode = fragment.lastChild
+      range.insertNode(fragment)
+    } else {
+      const fontSpan = document.createElement('span')
+      fontSpan.className = 'font-size-span'
+      fontSpan.style.fontSize = `${size}px`
+      fontSpan.style.lineHeight = '1.6'
+      fontSpan.appendChild(fragment)
+      firstInsertedNode = fontSpan
+      lastInsertedNode = fontSpan
+      range.insertNode(fontSpan)
+    }
+
     const newRange = document.createRange()
-    newRange.selectNodeContents(fontSpan)
+    try {
+      if (
+        firstInsertedNode &&
+        lastInsertedNode &&
+        firstInsertedNode.parentNode &&
+        lastInsertedNode.parentNode
+      ) {
+        newRange.setStartBefore(firstInsertedNode)
+        newRange.setEndAfter(lastInsertedNode)
+      } else {
+        newRange.setStart(range.startContainer, range.startOffset)
+        newRange.setEnd(range.endContainer, range.endOffset)
+      }
+    } catch {
+      newRange.setStart(range.startContainer, range.startOffset)
+      newRange.setEnd(range.endContainer, range.endOffset)
+    }
     selection.removeAllRanges()
     selection.addRange(newRange)
     savedRangeRef.current = newRange.cloneRange()
@@ -2212,12 +2333,12 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
         return
       }
       case 'fontSizeIncrease': {
-        const currentSize = getFontSizeFromNode(range.commonAncestorContainer)
+        const currentSize = getFontSizeFromRange(range)
         applyFontSize(Math.min(currentSize + FONT_SIZE_STEP, MAX_FONT_SIZE))
         return
       }
       case 'fontSizeDecrease': {
-        const currentSize = getFontSizeFromNode(range.commonAncestorContainer)
+        const currentSize = getFontSizeFromRange(range)
         applyFontSize(Math.max(currentSize - FONT_SIZE_STEP, MIN_FONT_SIZE))
         return
       }
@@ -2375,7 +2496,7 @@ export function MarkdownEditor({ content, onChange }: MarkdownEditorProps) {
 
     // Trigger content update
     handleInput()
-  }, [applyFontSize, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, ensureIsolatedBlock, getCurrentBlock, getCurrentListItem, getCurrentTableCell, getFontSizeFromNode, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, openFormulaDialog, restoreSavedSelection, wrapSelectionWithStyle])
+  }, [applyFontSize, clearColorTypingState, clearInlineTypingState, ensureCaretOutsideInlineFormatting, ensureIsolatedBlock, getCurrentBlock, getCurrentListItem, getCurrentTableCell, getFontSizeFromRange, handleInput, insertCodeBlockAtCaret, insertHtmlAtCaret, openFormulaDialog, restoreSavedSelection, wrapSelectionWithStyle])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
